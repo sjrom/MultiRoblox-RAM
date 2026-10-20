@@ -76,7 +76,7 @@ Run these commands in Windows PowerShell from `MultiRoblox/`.
 
 The README's `.\build.bat` reads the numeric `major.minor.patch` package version
 from `src-tauri/Cargo.toml` using `cargo metadata` and outputs
-`dist/release_<version>/MultiRoblox.exe`.
+`dist/release_<version>/MultiRoblox_v<version>.exe`.
 After checking required compilers and validating the version, it removes the
 entire same-version output directory before compiling; other versions are kept.
 Do not store unrelated files in these generated release directories. Close any

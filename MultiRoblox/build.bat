@@ -34,10 +34,10 @@ if errorlevel 1 (echo Build failed & pause & exit /b 1)
 
 mkdir "%BUILD_OUTPUT%"
 if errorlevel 1 (echo ERROR: Could not create release directory & pause & exit /b 1)
-copy /y "src-tauri\target\release\MultiRoblox.exe" "%BUILD_OUTPUT%\MultiRoblox.exe" >nul
+copy /y "src-tauri\target\release\MultiRoblox.exe" "%BUILD_OUTPUT%\MultiRoblox_v%BUILD_VERSION%.exe" >nul
 if errorlevel 1 (echo Could not copy MultiRoblox.exe & pause & exit /b 1)
 
 echo.
-echo Done. Executable: %BUILD_OUTPUT%\MultiRoblox.exe
+echo Done. Executable: %BUILD_OUTPUT%\MultiRoblox_v%BUILD_VERSION%.exe
 pause
 exit /b 0
