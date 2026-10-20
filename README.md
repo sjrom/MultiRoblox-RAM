@@ -31,7 +31,7 @@ cd MultiRoblox-RAM/MultiRoblox
 build.bat
 ```
 
-> Requires the [Rust toolchain](https://rustup.rs). The finished exe lands in `dist\MultiRoblox.exe`.
+> Requires the [Rust toolchain](https://rustup.rs). The finished exe lands in `dist\release_<version>\MultiRoblox.exe` (for example, `dist\release_1.2.6\MultiRoblox.exe`). Rebuilding removes the previous output directory for that version; other versions are kept.
 
 ---
 
