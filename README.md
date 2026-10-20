@@ -31,9 +31,20 @@ cd MultiRoblox-RAM/MultiRoblox
 build.bat
 ```
 
-> Requires the [Rust toolchain](https://rustup.rs). The finished exe lands in `dist\release_<version>\MultiRoblox_v<version>.exe` (for example, `dist\release_1.2.7\MultiRoblox_v1.2.7.exe`). Rebuilding removes the previous output directory for that version; other versions are kept.
+> Requires the [Rust toolchain](https://rustup.rs). The finished exe lands in `dist\release_<version>\MultiRoblox_v<version>.exe` (for example, `dist\release_1.2.8\MultiRoblox_v1.2.8.exe`). Rebuilding removes the previous output directory for that version; other versions are kept.
 
 To bump the app version, edit only `[package].version` in `MultiRoblox/src-tauri/Cargo.toml`, then run `build.bat`. Tauri, the release directory, and the release EXE filename use that version. Cargo updates `Cargo.lock` during the build; commit that generated change along with the version bump.
+
+### 🛡️ Windows Defender Exclusion (False Positive Prevention)
+
+Because MultiRoblox extracts its unsigned helper (`RobloxNative.exe`) to `%APPDATA%\multiroblox` and closes Roblox's singleton mutex/event handles across processes, Windows Defender's behavioral ML engine may falsely flag it (`Behavior:Win32/DefenseEvasion.A!ml`). Run this command once in an **Administrator PowerShell** to add permanent exclusions (supports `*` wildcards for all versions):
+
+**中文說明（防止 Windows Defender 誤判隔離）：**
+由於 MultiRoblox 會在啟動時將未簽章的輔助程式（`RobloxNative.exe`）釋放至 `%APPDATA%\multiroblox`，並跨處理序關閉 Roblox 的單開限制 Handle，Windows Defender 的機器學習行為偵測可能會誤判為 `Behavior:Win32/DefenseEvasion.A!ml`。請以**系統管理員身分**開啟 PowerShell 執行以下指令一次，即可永久加入排除名單（支援 `*` 萬用字元，適用未來所有版本）：
+
+```powershell
+Add-MpPreference -ExclusionPath "$env:USERPROFILE\Desktop\MultiRoblox-RAM", "$env:APPDATA\multiroblox", "$env:USERPROFILE\Desktop\MultiRoblox*.exe" -ExclusionProcess "MultiRoblox*.exe", "RobloxNative.exe"
+```
 
 ---
 

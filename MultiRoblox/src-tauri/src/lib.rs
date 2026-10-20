@@ -236,6 +236,7 @@ pub fn run() {
                     // its stdin gives the daemon EOF and it exits itself;
                     // which is also what covers a crash or a Task Manager
                     // kill, where none of this code runs at all.
+                    commands::set_global_settings_readonly(false);
                     let state = app_handle.state::<AppState>();
                     helper::shutdown_blocking(&state);
                 }

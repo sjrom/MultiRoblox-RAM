@@ -335,13 +335,10 @@ pub fn fflag_write(flags: Value) -> bool {
 // so Regex::new can't fail on them; doing it per call just re-paid the
 // compile and kept an unwrap in the path for no reason.
 static FPS_CAP_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
-    regex::Regex::new(r#"(?i)<int\s+name="FramerateCap"\s*>(\d+)</int>"#).unwrap()
+    regex::Regex::new(r#"(?i)<int\s+name="FramerateCap"\s*>(-?\d+)</int>"#).unwrap()
 });
-static FPS_CAP_REPLACE_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
-    regex::Regex::new(r#"(?i)<int\s+name="FramerateCap"\s*>\d+</int>"#).unwrap()
-});
-static CLOSING_ITEM_RE: once_cell::sync::Lazy<regex::Regex> =
-    once_cell::sync::Lazy::new(|| regex::Regex::new(r"</Item>").unwrap());
+static CLOSING_PROPS_RE: once_cell::sync::Lazy<regex::Regex> =
+    once_cell::sync::Lazy::new(|| regex::Regex::new(r"</Properties>").unwrap());
 
 fn global_settings_path() -> std::path::PathBuf {
     let home = std::env::var("USERPROFILE").unwrap_or_default();
@@ -352,16 +349,31 @@ fn global_settings_path() -> std::path::PathBuf {
         .join("GlobalBasicSettings_13.xml")
 }
 
+pub fn set_global_settings_readonly(readonly: bool) {
+    let p = global_settings_path();
+    if let Ok(meta) = std::fs::metadata(&p) {
+        let mut perms = meta.permissions();
+        if perms.readonly() != readonly {
+            perms.set_readonly(readonly);
+            let _ = std::fs::set_permissions(&p, perms);
+        }
+    }
+}
+
 #[tauri::command]
 pub fn fps_read() -> i64 {
+    if let Some(saved) = load_settings().get("fpsCap").and_then(|v| v.as_i64()) {
+        return saved;
+    }
     let p = global_settings_path();
     let Ok(xml) = std::fs::read_to_string(&p) else {
         return 60;
     };
-    FPS_CAP_RE
-        .captures(&xml)
-        .and_then(|c| c[1].parse::<i64>().ok())
-        .unwrap_or(60)
+    match FPS_CAP_RE.captures(&xml).and_then(|c| c[1].parse::<i64>().ok()) {
+        Some(v) if v >= 9999 => 0,
+        Some(v) if v > 0 => v,
+        _ => 60,
+    }
 }
 
 #[tauri::command]
@@ -371,30 +383,26 @@ pub fn fps_write(cap: f64) -> Value {
         return serde_json::json!({ "ok": false, "error": "GlobalBasicSettings_13.xml not found - launch Roblox once to create it." });
     };
     let raw = cap.round().max(0.0) as i64;
+    let mut s = load_settings();
+    s.insert("fpsCap".into(), Value::Number(raw.into()));
+    save_settings(&s);
     let value = if raw == 0 { 9999 } else { raw };
-    let new_xml = if FPS_CAP_REPLACE_RE.is_match(&xml) {
-        FPS_CAP_REPLACE_RE
+    let new_xml = if FPS_CAP_RE.is_match(&xml) {
+        FPS_CAP_RE
             .replace(&xml, format!(r#"<int name="FramerateCap">{}</int>"#, value))
             .to_string()
     } else {
-        CLOSING_ITEM_RE.replace(
+        CLOSING_PROPS_RE.replace(
             &xml,
-            format!("\t\t<int name=\"FramerateCap\">{}</int>\n</Item>", value),
+            format!("\t\t\t<int name=\"FramerateCap\">{}</int>\n\t\t</Properties>", value),
         )
         .to_string()
     };
-    // Some bootstrappers mark this file read-only for their own FPS
-    // unlocker; clear it so our write isn't silently blocked.
-    if let Ok(meta) = std::fs::metadata(&p) {
-        let mut perms = meta.permissions();
-        if perms.readonly() {
-            perms.set_readonly(false);
-            let _ = std::fs::set_permissions(&p, perms);
-        }
-    }
+    set_global_settings_readonly(false);
     if std::fs::write(&p, new_xml).is_err() {
         return serde_json::json!({ "ok": false, "error": "Failed to write GlobalBasicSettings_13.xml (file may be locked by another app)" });
     }
+    set_global_settings_readonly(true);
     serde_json::json!({ "ok": true })
 }
 
@@ -616,6 +624,7 @@ pub async fn roblox_launch(
         crate::native::finish_launch(&state, &id);
         return Ok(serde_json::json!({ "success": false, "cancelled": true, "error": "Launch cancelled" }));
     }
+    let _ = fps_write(fps_read() as f64);
     let result =
         crate::native::do_launch(&app, &state, &id, &cookie, target.as_deref().unwrap_or("")).await;
     crate::native::finish_launch(&state, &id);
