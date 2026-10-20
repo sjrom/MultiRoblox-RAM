@@ -33,6 +33,8 @@ build.bat
 
 > Requires the [Rust toolchain](https://rustup.rs). The finished exe lands in `dist\release_<version>\MultiRoblox.exe` (for example, `dist\release_1.2.6\MultiRoblox.exe`). Rebuilding removes the previous output directory for that version; other versions are kept.
 
+To bump the app version, edit only `[package].version` in `MultiRoblox/src-tauri/Cargo.toml`, then run `build.bat`. Tauri and the release directory use that version. Cargo updates `Cargo.lock` during the build; commit that generated change along with the version bump.
+
 ---
 
 ## Features

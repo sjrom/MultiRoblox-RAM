@@ -12,9 +12,9 @@ set "CSC=%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 if not exist "%CSC%" set "CSC=%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe"
 if not exist "%CSC%" (echo ERROR: .NET Framework C# compiler not found & pause & exit /b 1)
 
-rem Validate the version before using it in a directory deletion.
+rem Read Cargo's package version and validate it before directory deletion.
 set "BUILD_VERSION="
-for /f "delims=" %%V in ('powershell.exe -NoProfile -Command "$ErrorActionPreference = 'Stop'; $v = (Get-Content -LiteralPath 'src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json).version; if ($v -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Expected a major.minor.patch app version' }; Write-Output $v"') do set "BUILD_VERSION=%%V"
+for /f "delims=" %%V in ('powershell.exe -NoProfile -Command "$ErrorActionPreference = 'Stop'; $raw = & cargo metadata --no-deps --format-version 1 --manifest-path 'src-tauri/Cargo.toml'; if ($LASTEXITCODE -ne 0) { throw 'Could not read Cargo metadata' }; $m = ConvertFrom-Json ($raw -join [Environment]::NewLine); $v = $m.packages.Where({ $_.name -eq 'mr_tauri' }).version; if ($v -isnot [string] -or $v -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Expected a major.minor.patch app version' }; Write-Output $v"') do set "BUILD_VERSION=%%V"
 if not defined BUILD_VERSION (echo ERROR: Could not read a valid app version & pause & exit /b 1)
 set "BUILD_OUTPUT=dist\release_%BUILD_VERSION%"
 

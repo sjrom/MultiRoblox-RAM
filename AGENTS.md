@@ -74,8 +74,9 @@ Node.js, `npm install`, or the Tauri CLI.
 
 Run these commands in Windows PowerShell from `MultiRoblox/`.
 
-The README's `.\build.bat` reads the numeric `major.minor.patch` version from
-`src-tauri/tauri.conf.json` and outputs `dist/release_<version>/MultiRoblox.exe`.
+The README's `.\build.bat` reads the numeric `major.minor.patch` package version
+from `src-tauri/Cargo.toml` using `cargo metadata` and outputs
+`dist/release_<version>/MultiRoblox.exe`.
 After checking required compilers and validating the version, it removes the
 entire same-version output directory before compiling; other versions are kept.
 Do not store unrelated files in these generated release directories. Close any
@@ -110,6 +111,8 @@ if ($LASTEXITCODE -ne 0) { throw "Main executable build failed" }
 
 This direct command produces `src-tauri/target/release/MultiRoblox.exe`; it does
 not perform the versioned output cleanup/copy provided by `build.bat`.
+After a version bump, run `.\build.bat` first so Cargo can update `Cargo.lock`
+before using commands with `--locked`.
 
 Do not copy or report an older artifact as a successful new build. If the helper
 source changes, rebuild the helper before the main executable, or explicitly
@@ -139,8 +142,10 @@ report that binary generation remains pending on Windows.
   When updating it, identify the source revision, build command, and SHA-256.
 - Antivirus results and matching hashes are evidence about a specific artifact,
   not proof of safety. Do not disable protection or add exclusions as a build fix.
-- Keep the Rust package version in `Cargo.toml`, its entry in `Cargo.lock`, and
-  the app version in `tauri.conf.json` aligned for an intentional release.
+- `src-tauri/Cargo.toml` `[package].version` is the single manually maintained
+  app version. Leave `version` absent from `tauri.conf.json` so Tauri inherits it.
+  Cargo updates the package's `Cargo.lock` entry during a normal build; include
+  that generated change in the version-bump commit.
   `package.json` currently describes the frontend tooling package; do not assume
   its version controls the Windows executable.
 - Verify the built executable's version before preparing release assets.
