@@ -311,9 +311,6 @@ function setTheme(name) {
   applyTheme(name);
   try { localStorage.setItem('ui-theme', name); } catch {}
 }
-function openDiscord() {
-  api.openExternal('https://discord.gg/kZ8MZZ8dTF');
-}
 // Re-runs what the inline bootstrap already did, so the theme-card selection
 // state gets marked and the choice is persisted for anyone still on the old
 // pre-'ui-theme' key. Applying the same class twice is a no-op.

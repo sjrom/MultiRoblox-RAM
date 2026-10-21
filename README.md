@@ -83,7 +83,7 @@ Add-MpPreference -ExclusionPath "$env:USERPROFILE\Desktop\MultiRoblox-RAM", "$en
 
 ### ⚙️ Settings
 - **General**: multi-instance status, anti-AFK, relaunch-on-disconnect
-- **Performance**: RAM trim (manual or automatic on an interval), block RobloxCrashHandler.exe from starting, lower CPU priority once multiple accounts are running, force a specific rendering engine (Direct3D 11/9, OpenGL, Vulkan) via Fast Flags
+- **Performance**: RAM trim (manual or automatic on an interval), lower CPU priority once multiple accounts are running, force a specific rendering engine (Direct3D 11/9, OpenGL, Vulkan) via Fast Flags
 - **Data & Privacy**: custom encryption key (AES-256-GCM) or OS-native DPAPI (Windows keychain), clear all accounts
 - **Themes**: light/dark and several accent themes
 - **Sounds**: custom UI sound profiles with volume control and upload-your-own support
