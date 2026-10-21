@@ -112,18 +112,6 @@ Running multiple Roblox accounts isn't something Roblox actively bans for normal
 
 ---
 
-## Support
-
-If MultiRoblox saved you time, consider tossing a tip my way.
-
-| Coin | Address |
-|---|---|
-| BTC | `15kEbCxtNKbQ2g16AmiW8BeEKU3h6i9S46` |
-| ETH | `0x179ab005a9CD84769934aB66825D38C347D9AB4d` |
-| LTC | `LTLYLK9mUMVUk9Gk5j3W8oYqtq1cYiU3Uy` | 
-
----
-
 ## License
 
 Free to use, modify, and share. You may not sell it, and any copy or fork must credit **pookiepepelss** as the original author.
