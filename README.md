@@ -106,9 +106,26 @@ If the native helper isn't shipped with a build, it compiles from the bundled so
 
 ---
 
-## Disclaimer
+## Disclaimer / 免責聲明
 
-Running multiple Roblox accounts isn't something Roblox actively bans for normal use, but using this software is at your own risk. The author is not responsible for any bans, suspensions, or other action taken against your account.
+### English
+
+This project is an unofficial modified version maintained by [sjrom](https://github.com/sjrom), based on the original project by [PookiePepelsss](https://github.com/PookiePepelsss/MultiRoblox-RAM). It is not developed, sponsored, endorsed, or supported by Roblox Corporation. Roblox and related trademarks belong to their respective owners.
+
+Users must comply with the [Roblox Terms of Use](https://en.help.roblox.com/hc/en-us/articles/115004647846-Roblox-Terms-of-Use), [Community Standards](https://en.help.roblox.com/hc/en-us/articles/203313410-Roblox-Community-Standards), and the rules of each experience. This project does not guarantee that its features comply with Roblox policies or that using it will avoid account restrictions, suspension, or other enforcement actions. Do not use it for cheating, ban evasion, unauthorized access, or other prohibited activities.
+
+This disclaimer does not grant permission from Roblox or override applicable terms or law. Report issues with this fork to [this repository](https://github.com/sjrom/MultiRoblox-RAM/issues), rather than requesting support from the original author or Roblox.
+
+### 繁體中文
+
+本專案為 [sjrom](https://github.com/sjrom) 維護的非官方修改版本，源自 [PookiePepelsss 的原始專案](https://github.com/PookiePepelsss/MultiRoblox-RAM)，並非由 Roblox Corporation 開發、贊助、認可或提供支援。
+Roblox 名稱及相關商標屬其各自權利人所有。
+
+使用者必須遵守 [Roblox 使用條款](https://en.help.roblox.com/hc/en-us/articles/115004647846-Roblox-Terms-of-Use)、[社群規範](https://en.help.roblox.com/hc/en-us/articles/203313410-Roblox-Community-Standards)及各遊戲規則。
+本專案不保證其功能符合 Roblox 政策，也不保證使用後不會受到帳號限制、停權或其他處置。請勿用於作弊、規避停權、未經授權存取或其他違規用途。
+
+本聲明不代表取得 Roblox 的許可，亦不取代適用條款或法律。
+此 fork 的問題請向[本 repository](https://github.com/sjrom/MultiRoblox-RAM/issues) 回報，請勿向原作者或 Roblox 尋求此修改版本的技術支援。
 
 ---
 
