@@ -202,6 +202,9 @@ pub fn accounts_load(state: State<AppState>) -> Vec<Value> {
 pub fn accounts_add(state: State<AppState>, account: Map<String, Value>) -> Result<Value, String> {
     let mut accounts = storage::load_accounts(&state);
     let mut a = Value::Object(account);
+    if a.get("fpsCap").is_none() {
+        a["fpsCap"] = Value::Number(30.into());
+    }
     a["id"] = Value::String(uuid::Uuid::new_v4().to_string());
     a["createdAt"] = Value::String(chrono::Utc::now().to_rfc3339());
     a["lastUsed"] = Value::Null;
@@ -367,12 +370,12 @@ pub fn fps_read() -> i64 {
     }
     let p = global_settings_path();
     let Ok(xml) = std::fs::read_to_string(&p) else {
-        return 60;
+        return 30;
     };
     match FPS_CAP_RE.captures(&xml).and_then(|c| c[1].parse::<i64>().ok()) {
         Some(v) if v >= 9999 => 0,
         Some(v) if v > 0 => v,
-        _ => 60,
+        _ => 30,
     }
 }
 
@@ -624,7 +627,6 @@ pub async fn roblox_launch(
         crate::native::finish_launch(&state, &id);
         return Ok(serde_json::json!({ "success": false, "cancelled": true, "error": "Launch cancelled" }));
     }
-    let _ = fps_write(fps_read() as f64);
     let result =
         crate::native::do_launch(&app, &state, &id, &cookie, target.as_deref().unwrap_or("")).await;
     crate::native::finish_launch(&state, &id);

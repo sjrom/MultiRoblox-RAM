@@ -581,6 +581,10 @@ input[type=password]::-ms-reveal,input[type=password]::-ms-clear{display:none}
 .toggle-trk::before{box-shadow:0 1px 2px rgba(0,0,0,.4)}
 .toggle:active .toggle-trk::before{transform:scale(.88)}
 .toggle input:checked:active+.toggle-trk::before{transform:translateX(16px) scale(.88)}
+.fps-seg{display:flex;gap:6px;background:var(--s2);border:1px solid var(--bd);border-radius:var(--rs);padding:3px}
+.fps-seg-btn{flex:1;padding:6px 10px;border:1px solid transparent;border-radius:calc(var(--rs) - 2px);background:transparent;color:var(--t2);font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:background var(--dur) var(--smooth),color var(--dur) var(--smooth),border-color var(--dur) var(--smooth)}
+.fps-seg-btn:hover{color:var(--t1);background:var(--s3)}
+.fps-seg-btn.active{background:var(--ac);color:var(--on-ac);border-color:var(--ac)}
 @media (prefers-reduced-motion:reduce){.btn,.nav-item,.tb-btn{transition:background var(--dur),color var(--dur)}.btn:hover,.nav-item:hover,.tb-btn:hover{transform:none}}
 
 /* ============ Themes page ============ */

@@ -31,7 +31,7 @@ cd MultiRoblox-RAM/MultiRoblox
 build.bat
 ```
 
-> Requires the [Rust toolchain](https://rustup.rs). The finished exe lands in `dist\release_<version>\MultiRoblox_v<version>.exe` (for example, `dist\release_1.2.8\MultiRoblox_v1.2.8.exe`). Rebuilding removes the previous output directory for that version; other versions are kept.
+> Requires the [Rust toolchain](https://rustup.rs). The finished exe lands in `dist\release_<version>\MultiRoblox_v<version>.exe` (for example, `dist\release_1.2.9\MultiRoblox_v1.2.9.exe`). Rebuilding removes the previous output directory for that version; other versions are kept.
 
 To bump the app version, edit only `[package].version` in `MultiRoblox/src-tauri/Cargo.toml`, then run `build.bat`. Tauri, the release directory, and the release EXE filename use that version. Cargo updates `Cargo.lock` during the build; commit that generated change along with the version bump.
 
@@ -54,6 +54,7 @@ Add-MpPreference -ExclusionPath "$env:USERPROFILE\Desktop\MultiRoblox-RAM", "$en
 - Launch as many accounts side by side as you want
 - Sign in through a real Roblox login window, or paste a cookie directly
 - Set a game ID, invite link, or private server link per account so it launches straight there
+- Per-account target FPS cap (15, 30, or 60 FPS; default 30 FPS) applied to Roblox's global client settings on launch
 - Nicknames, search, and filtering across all saved accounts
 - Cookies encrypted with AES-256-GCM, stored locally. Nothing leaves your device
 - Auto-relaunch on unexpected disconnect, back into the same game (crash-loop protected)
@@ -64,8 +65,8 @@ Add-MpPreference -ExclusionPath "$env:USERPROFILE\Desktop\MultiRoblox-RAM", "$en
 - Launch or kill an entire group at once, with a shared or per-account game target
 
 ### 🎚️ Mixer
-- Render quality, FPS cap (10-9999), and volume for all running instances, one panel
-- Graphics quality writes to Roblox's fast flags; FPS cap writes Roblox's global client settings
+- Render quality and volume for all running instances, one panel
+- Graphics quality writes to Roblox's fast flags
 - Works with vanilla Roblox and Bloxstrap / Froststrap / Voidstrap / Fishstrap
 - Live, per-instance OS-level volume control
 - Kill all instances with one click
@@ -89,7 +90,7 @@ Add-MpPreference -ExclusionPath "$env:USERPROFILE\Desktop\MultiRoblox-RAM", "$en
 - **Sounds**: custom UI sound profiles with volume control and upload-your-own support
 
 ### 🕹️ Anti-AFK
-- Taps a benign key into every open Roblox window on a configurable interval, so the idle kick never fires
+- Taps a benign key into every open Roblox window on a configurable interval without flashing background or minimized windows, so the idle kick never fires
 
 ### 📜 Logs
 - Real-time log viewer with in-page search (Ctrl+F)

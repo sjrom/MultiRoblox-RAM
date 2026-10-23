@@ -187,7 +187,7 @@ window.DEFAULT_THEME = 'dark';
         <div class="ph" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
           <div>
             <div class="ph-title">Mixer</div>
-            <div class="ph-sub">Graphics, FPS and volume for every instance</div>
+            <div class="ph-sub">Graphics and volume for every instance</div>
           </div>
         </div>
         <div class="sw">
@@ -204,22 +204,6 @@ window.DEFAULT_THEME = 'dark';
                 <input type="range" class="fps-slider" id="mix-gfx" min="1" max="21" step="1" value="10"
                        oninput="mixGfxInput(this.value)" onchange="mixGfxCommit()"/>
                 <span class="fps-val-label" id="mix-gfx-val">10</span>
-              </div>
-            </div>
-          </div>
-          <!-- FPS cap -->
-          <div class="sc">
-            <div class="sc-head">FPS Cap</div>
-            <div class="sr" style="flex-direction:column;align-items:stretch;gap:10px">
-              <div class="sr-left">
-                <div class="sr-label">Target framerate</div>
-                <div class="sr-desc">Writes to <code>GlobalBasicSettings_13.xml</code>, the method that still works after Roblox's Fast Flag allowlist. Applies on next launch.</div>
-              </div>
-              <div class="mix-row">
-                <label class="mix-auto"><span class="toggle sm"><input type="checkbox" id="mix-fps-unl" onchange="mixFpsUnlToggle()"/><span class="toggle-trk"></span></span> Unlimited</label>
-                <input type="range" class="fps-slider" id="mix-fps" min="10" max="9999" step="5" value="60"
-                       oninput="mixFpsInput(this.value)" onchange="mixFpsCommit()"/>
-                <span class="fps-val-label" id="mix-fps-val" style="min-width:40px">60</span>
               </div>
             </div>
           </div>
@@ -874,6 +858,15 @@ window.DEFAULT_THEME = 'dark';
       </div>
       <div class="field-hint" id="follow-status">Finds the server they're in and fills the target above.</div>
     </div>
+    <div class="field">
+      <label>Target FPS</label>
+      <div class="fps-seg" id="edit-fps-seg">
+        <button type="button" class="fps-seg-btn" data-fps="15" onclick="selectEditFps(15)">15 FPS</button>
+        <button type="button" class="fps-seg-btn active" data-fps="30" onclick="selectEditFps(30)">30 FPS</button>
+        <button type="button" class="fps-seg-btn" data-fps="60" onclick="selectEditFps(60)">60 FPS</button>
+      </div>
+      <div class="field-hint">Applies to this instance when launched (default: 30 FPS).</div>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('m-edit')">Cancel</button>
       <button class="btn btn-primary" onclick="saveEdit()"><span class="material-icons-round">save</span>Save</button>
@@ -943,7 +936,7 @@ window.DEFAULT_THEME = 'dark';
       </div>
       <div style="display:flex;gap:12px;align-items:flex-start">
         <span class="material-icons-round" style="font-size:16px;color:var(--ac);margin-top:1px;flex-shrink:0">tune</span>
-        <div><div style="font-size:12.5px;font-weight:600;color:var(--t1);margin-bottom:2px">Mixer</div><div style="font-size:12px;color:var(--t2)">Set graphics quality, FPS cap, and volume for every instance. Applies on next launch.</div></div>
+        <div><div style="font-size:12.5px;font-weight:600;color:var(--t1);margin-bottom:2px">Mixer</div><div style="font-size:12px;color:var(--t2)">Set graphics quality and volume for every instance. Applies on next launch.</div></div>
       </div>
       <div style="display:flex;gap:12px;align-items:flex-start">
         <span class="material-icons-round" style="font-size:16px;color:var(--ac);margin-top:1px;flex-shrink:0">shuffle</span>

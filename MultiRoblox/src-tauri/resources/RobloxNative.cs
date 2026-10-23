@@ -623,18 +623,27 @@ internal static class AntiAfk
     [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, IntPtr dwExtraInfo);
     [DllImport("user32.dll")] static extern bool SystemParametersInfo(uint uiAction, uint uiParam, IntPtr pvParam, uint fWinIni);
+    [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+    [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+    [DllImport("user32.dll")] static extern bool SetLayeredWindowAttributes(IntPtr hWnd, uint crKey, byte bAlpha, uint dwFlags);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+    [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
     delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
     const int SW_RESTORE = 9, SW_MINIMIZE = 6;
     const uint KEYEVENTF_KEYUP = 0x0002;
+    const int GWL_EXSTYLE = -20;
+    const int WS_EX_LAYERED = 0x00080000;
+    const uint LWA_ALPHA = 0x00000002;
+    const int DWMWA_TRANSITIONS_FORCEDISABLED = 3;
+    static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
+    const uint SWP_NOSIZE = 0x0001, SWP_NOMOVE = 0x0002, SWP_NOACTIVATE = 0x0010;
 
-    static readonly Random _rng = new Random();
-
-    static uint PidOf(IntPtr hWnd)
+    static uint ThreadOf(IntPtr hWnd)
     {
         if (hWnd == IntPtr.Zero) return 0;
-        uint pid; GetWindowThreadProcessId(hWnd, out pid); return pid;
+        uint pid; return GetWindowThreadProcessId(hWnd, out pid);
     }
 
     // pid -> main visible window, for every running Roblox client.
@@ -664,31 +673,54 @@ internal static class AntiAfk
     {
         IntPtr fg = GetForegroundWindow();
         uint thisThread = GetCurrentThreadId();
-        uint fgThread = (fg != IntPtr.Zero) ? PidOf(fg) : 0;
+        uint fgThread = ThreadOf(fg);
         bool attached = false;
         if (fgThread != 0 && fgThread != thisThread) attached = AttachThreadInput(thisThread, fgThread, true);
         try { SetForegroundWindow(hWnd); BringWindowToTop(hWnd); }
         finally { if (attached) AttachThreadInput(thisThread, fgThread, false); }
     }
 
-    // Focus one window and send a single benign key tap. Does NOT restore the
-    // previous foreground (the caller does that once after all due taps).
-    static bool TapWindow(IntPtr hWnd, byte bVk, byte bScan)
+    // Focus one window and send a single benign key tap. For background or
+    // minimised windows, makes the window completely transparent (alpha=0) and
+    // disables DWM animations during the ~40ms tap so it never flashes on screen.
+    static bool TapWindow(IntPtr hWnd, byte bVk, byte bScan, IntPtr originalFg)
     {
         bool wasMinimised = IsIconic(hWnd);
+        bool hideVisual = (hWnd != originalFg);
+        int origExStyle = 0;
+        bool addedLayered = false;
+        int one = 1, zero = 0;
         try
         {
+            if (hideVisual)
+            {
+                try { DwmSetWindowAttribute(hWnd, DWMWA_TRANSITIONS_FORCEDISABLED, ref one, sizeof(int)); } catch { }
+                origExStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
+                addedLayered = (origExStyle & WS_EX_LAYERED) == 0;
+                if (addedLayered) SetWindowLong(hWnd, GWL_EXSTYLE, origExStyle | WS_EX_LAYERED);
+                SetLayeredWindowAttributes(hWnd, 0, 0, LWA_ALPHA);
+            }
             if (wasMinimised) ShowWindow(hWnd, SW_RESTORE);
             ForceForeground(hWnd);
-            Thread.Sleep(50 + _rng.Next(40)); // let focus settle; slight jitter
+            Thread.Sleep(15);
             keybd_event(bVk, bScan, 0, IntPtr.Zero);               // key down
-            Thread.Sleep(35 + _rng.Next(40));
+            Thread.Sleep(15);
             keybd_event(bVk, bScan, KEYEVENTF_KEYUP, IntPtr.Zero); // key up
-            Thread.Sleep(30 + _rng.Next(30));
+            Thread.Sleep(10);
             return true;
         }
         catch { return false; }
-        finally { if (wasMinimised) ShowWindow(hWnd, SW_MINIMIZE); }
+        finally
+        {
+            if (wasMinimised) ShowWindow(hWnd, SW_MINIMIZE);
+            else if (hideVisual) SetWindowPos(hWnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            if (hideVisual)
+            {
+                SetLayeredWindowAttributes(hWnd, 0, 255, LWA_ALPHA);
+                if (addedLayered) SetWindowLong(hWnd, GWL_EXSTYLE, origExStyle);
+                try { DwmSetWindowAttribute(hWnd, DWMWA_TRANSITIONS_FORCEDISABLED, ref zero, sizeof(int)); } catch { }
+            }
+        }
     }
 
     // Per-instance anti-AFK loop. Each Roblox window gets its own countdown from
@@ -784,7 +816,7 @@ internal static class AntiAfk
 
             foreach (var pid in due)
             {
-                if (TapWindow(windows[pid], bVk, bScan) && onTap != null) onTap(pid);
+                if (TapWindow(windows[pid], bVk, bScan, originalFg) && onTap != null) onTap(pid);
                 lastReset[pid] = DateTime.UtcNow;
             }
 
@@ -800,9 +832,9 @@ internal static class AntiAfk
         if (hWnd == IntPtr.Zero) return;
         try
         {
-            Thread.Sleep(40);
+            Thread.Sleep(10);
             ForceForeground(hWnd);
-            Thread.Sleep(40);
+            Thread.Sleep(10);
             SetForegroundWindow(hWnd); // second pass; focus has settled by now
         }
         catch { }

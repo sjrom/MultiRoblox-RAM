@@ -896,7 +896,7 @@ function render() {
           <div class="card-name">${esc(a.nickname || a.username || 'Unknown')}</div>
           <span class="card-expired" title="This account's cookie is no longer valid. Re-add the account to refresh it."><span class="material-icons-round">error_outline</span>Expired</span>
         </div>
-        <div class="card-uid">${a.userId ? 'ID ' + a.userId : 'No ID'}</div>
+        <div class="card-uid">${a.userId ? 'ID ' + a.userId : 'No ID'} · ${(a.fpsCap === 15 || a.fpsCap === 60) ? a.fpsCap : 30} FPS</div>
       </div>
       <div class="card-game ${a.gameTarget ? 'visible' : ''}" id="gt-${a.id}" title="${esc(a.gameTarget || '')}">${a.gameTarget ? esc(truncate(_gameNameCache[a.id] || extractTargetLabel(a.gameTarget), 22)) : ''}</div>
       <div class="card-row">
@@ -1440,7 +1440,7 @@ function cancelLogin() {
 
 async function finishLogin(res) {
   setStatus('login-status', 'ok', '<span class="material-icons-round">check_circle</span>Signed in as ' + esc(res.username));
-  const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: res.cookie, gameTarget: '' });
+  const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: res.cookie, gameTarget: '', fpsCap: 30 });
   accounts.push(a); render();
   setTimeout(() => {
     closeModal('m-login');
@@ -1448,6 +1448,14 @@ async function finishLogin(res) {
     const grid = document.getElementById('grid');
     if (grid) grid.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, 800);
+}
+
+let _editFps = 30;
+function selectEditFps(fps) {
+  _editFps = (fps === 15 || fps === 60) ? fps : 30;
+  document.querySelectorAll('#edit-fps-seg .fps-seg-btn').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.fps, 10) === _editFps);
+  });
 }
 
 function openEdit(id) {
@@ -1466,6 +1474,7 @@ function openEdit(id) {
   document.getElementById('in-nickname').value = editAcc.nickname || '';
   document.getElementById('in-description').value = editAcc.description || '';
   document.getElementById('in-target').value = editAcc.gameTarget || '';
+  selectEditFps(editAcc.fpsCap);
   // Reset follow field/status; it's a lookup tool, not a saved value.
   document.getElementById('in-follow').value = '';
   followSetStatus("Finds the server they're in and fills the target above.", '');
@@ -1511,7 +1520,7 @@ async function saveEdit() {
   const target = document.getElementById('in-target').value.trim();
   const nickname = document.getElementById('in-nickname').value.trim();
   const description = document.getElementById('in-description').value.trim();
-  const updated = await api.updateAccount(editAcc.id, { gameTarget: target, nickname, description });
+  const updated = await api.updateAccount(editAcc.id, { gameTarget: target, nickname, description, fpsCap: _editFps });
   if (updated) {
     const idx = accounts.findIndex(a => a.id === editAcc.id);
     if (idx !== -1) {
@@ -2377,55 +2386,14 @@ async function mixInit() {
   document.getElementById('mix-gfx-val').textContent = gfxAuto ? 'Auto' : gfxVal;
   document.getElementById('mix-gfx').disabled = gfxAuto;
 
-  // FPS - read from GlobalBasicSettings_13.xml via new ipc
-  try {
-    const fpsCap = await api.readFpsCap();
-    const fpsUnl = (fpsCap === 0);
-    document.getElementById('mix-fps-unl').checked = fpsUnl;
-    document.getElementById('mix-fps').value = fpsUnl ? 60 : Math.max(10, fpsCap || 60);
-    document.getElementById('mix-fps-val').textContent = fpsUnl ? '\u221e' : (fpsCap || 60);
-    document.getElementById('mix-fps').disabled = fpsUnl;
-  } catch {}
-
   // Volume
   const vol = (typeof settings.masterVolume === 'number') ? settings.masterVolume : 100;
   document.getElementById('mix-vol').value = vol;
   document.getElementById('mix-vol-val').textContent = vol + '%';
 
   updateSliderFill(document.getElementById('mix-gfx'));
-  updateSliderFill(document.getElementById('mix-fps'));
   updateSliderFill(document.getElementById('mix-vol'));
   mixRefreshRunning();
-}
-
-// FPS
-function mixFpsInput(v) {
-  v = parseInt(v, 10);
-  const snapped = v >= 9999 ? 9999 : Math.round(v / 5) * 5;
-  const sl = document.getElementById('mix-fps');
-  if (sl.value != snapped) sl.value = snapped;
-  document.getElementById('mix-fps-val').textContent = snapped;
-  updateSliderFill(sl);
-}
-async function mixFpsUnlToggle() {
-  const unl = document.getElementById('mix-fps-unl').checked;
-  document.getElementById('mix-fps').disabled = unl;
-  if (unl) {
-    document.getElementById('mix-fps-val').textContent = '\u221e';
-    const res = await api.writeFpsCap(0);
-    if (res && res.ok === false) toast(res.error || 'Failed to set FPS cap', 'err');
-    else toast('FPS set to unlimited (next launch)', 'ok');
-  } else {
-    mixFpsCommit();
-  }
-}
-async function mixFpsCommit() {
-  if (document.getElementById('mix-fps-unl').checked) return;
-  const v = parseInt(document.getElementById('mix-fps').value, 10);
-  document.getElementById('mix-fps-val').textContent = v;
-  const res = await api.writeFpsCap(v);
-  if (res && res.ok === false) { toast(res.error || 'Failed to set FPS cap', 'err'); return; }
-  toast('FPS cap: ' + v + ' (next launch)', 'ok');
 }
 
 function clampInt(v, min, max, dflt) {
@@ -2775,7 +2743,6 @@ async function mixApply() {
   const orig = btn.innerHTML;
 
   mixGfxCommit();
-  mixFpsCommit();
   try { await api.setRobloxVolume(document.getElementById('mix-vol').value); } catch {}
 
   btn.disabled = false;
@@ -3018,7 +2985,7 @@ async function genHistAdd(i) {
   try {
     const res = await api.validateCookie(h.cookie);
     if (!res || !res.username) { toast('Cookie invalid or expired', 'err'); return; }
-    const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: h.cookie, gameTarget: '', nickname: '' });
+    const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: h.cookie, gameTarget: '', nickname: '', fpsCap: 30 });
     if (a) { accounts.push(a); render(); toast('Added ' + res.username + ' to accounts', 'ok'); }
   } catch(e) { toast('Failed to add: ' + e.message, 'err'); }
 }
@@ -3031,7 +2998,7 @@ async function genAddToAccounts() {
   try {
     const r = await api.loginWithCredentials(_lastGenData.username, _lastGenData.password);
     if (!r.success || !r.cookie) { toast(r.error || 'Login failed', 'err'); if (btn) { btn.disabled = false; if (btnLabel) btnLabel.textContent = 'add'; } return; }
-    const a = await api.addAccount({ username: r.username || _lastGenData.username, userId: r.userId || null, cookie: r.cookie, gameTarget: '', nickname: '' });
+    const a = await api.addAccount({ username: r.username || _lastGenData.username, userId: r.userId || null, cookie: r.cookie, gameTarget: '', nickname: '', fpsCap: 30 });
     if (a) { accounts.push(a); render(); toast('Added ' + (r.username || _lastGenData.username) + ' to accounts!', 'ok'); }
     if (btn) { btn.disabled = false; if (btnLabel) btnLabel.textContent = 'add'; }
   } catch(e) { toast('Failed: ' + (e.message || e), 'err'); if (btn) { btn.disabled = false; if (btnLabel) btnLabel.textContent = 'add'; } }

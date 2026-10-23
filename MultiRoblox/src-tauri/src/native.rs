@@ -1233,6 +1233,11 @@ pub async fn do_launch(
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
+    let account_fps_cap = match stored.get("fpsCap").and_then(|v| v.as_i64()) {
+        Some(15) => 15,
+        Some(60) => 60,
+        _ => 30,
+    };
     let cookie: &str = if stored_cookie.is_empty() {
         cookie
     } else {
@@ -1472,6 +1477,7 @@ pub async fn do_launch(
     }
 
     let mut spawned_pid: Option<u32> = None;
+    let _ = crate::commands::fps_write(account_fps_cap as f64);
     for attempt in 0..3 {
         if attempt > 0 {
             tokio::time::sleep(Duration::from_secs(3)).await;
