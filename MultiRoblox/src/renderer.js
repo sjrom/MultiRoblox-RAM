@@ -364,8 +364,7 @@ async function detectRobloxVersion() {
 async function showAppVersion() {
   let v;
   try { v = await api.getAppVersion(); } catch { return; }
-  const verEl = document.getElementById('stat-app-ver');
-  if (verEl && v) verEl.textContent = 'Version ' + v;
+  if (v) { const t = 'MultiRoblox v' + v; document.title = t; const el = document.getElementById('tb-app-title'); if (el) el.textContent = t; }
 }
 
 function applySettings() {
@@ -2712,6 +2711,25 @@ function mixVolCommit() {
 }
 
 // Kill all
+async function alignRobloxWindows() {
+  const btn = document.getElementById('nav-align');
+  if (btn && btn.disabled) return;
+  if (btn) btn.disabled = true;
+  try {
+    const res = await api.alignRobloxWindows();
+    if (res && res.ok) {
+      const n = res.aligned || 0;
+      toast(n ? `Aligned ${n} instance${n === 1 ? '' : 's'}` : 'No running Roblox instances', n ? 'ok' : 'err');
+    } else {
+      toast('Align failed' + (res && res.error ? ': ' + res.error : ''), 'err');
+    }
+  } catch (e) {
+    toast('Align failed: ' + (e.message || e), 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 async function mixKillAll() {
   const btns = Array.from(document.querySelectorAll('.kill-roblox-btn'));
   if (!btns.length || btns[0].disabled) return;

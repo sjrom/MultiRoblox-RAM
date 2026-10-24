@@ -32,6 +32,7 @@
     validateCookie: (cookie) => invoke('roblox_validate_cookie', { cookie }),
 
     setRobloxVolume: (percent) => invoke('roblox_set_volume', { percent }),
+    alignRobloxWindows: () => invoke('roblox_align_windows'),
     killAllRoblox: () => invoke('roblox_kill_all'),
     killOneRoblox: (id) => invoke('roblox_kill_one', { id }),
     getRunningCount: () => invoke('roblox_running_count'),

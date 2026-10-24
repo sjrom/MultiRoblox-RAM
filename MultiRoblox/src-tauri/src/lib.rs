@@ -121,6 +121,7 @@ pub fn run() {
             // means; the quitting flag lets the tray's Quit item and the
             // in-app quit get through the same handler.
             if let Some(main) = handle.get_webview_window("main") {
+                let _ = main.set_title(&format!("MultiRoblox v{}", env!("CARGO_PKG_VERSION")));
                 let handle5 = handle.clone();
                 main.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -180,6 +181,7 @@ pub fn run() {
             commands::rdd_delete_version,
             commands::roblox_validate_cookie,
             commands::roblox_set_volume,
+            commands::roblox_align_windows,
             commands::roblox_kill_all,
             commands::roblox_kill_one,
             commands::roblox_running_count,

@@ -13,7 +13,7 @@
 
 <br>
 
-<!-- add a screenshot or GIF of the app here -->
+<img src="assets/screenshot.png" alt="MultiRoblox 2x2 Auto-Aligned Instances with Per-Account 30/15 FPS Cap" width="860" />
 
 </div>
 
@@ -31,19 +31,19 @@ cd MultiRoblox-RAM/MultiRoblox
 build.bat
 ```
 
-> Requires the [Rust toolchain](https://rustup.rs). The finished exe lands in `dist\release_<version>\MultiRoblox_v<version>.exe` (for example, `dist\release_1.2.9\MultiRoblox_v1.2.9.exe`). Rebuilding removes the previous output directory for that version; other versions are kept.
+> Requires the [Rust toolchain](https://rustup.rs). The finished exe lands in `dist\release_<version>\MultiRoblox_v<version>.exe` (for example, `dist\release_1.2.10\MultiRoblox_v1.2.10.exe`). Rebuilding removes the previous output directory for that version; other versions are kept.
 
 To bump the app version, edit only `[package].version` in `MultiRoblox/src-tauri/Cargo.toml`, then run `build.bat`. Tauri, the release directory, and the release EXE filename use that version. Cargo updates `Cargo.lock` during the build; commit that generated change along with the version bump.
 
 ### 🛡️ Windows Defender Exclusion (False Positive Prevention)
 
-Because MultiRoblox extracts its unsigned helper (`RobloxNative.exe`) to `%APPDATA%\multiroblox` and closes Roblox's singleton mutex/event handles across processes, Windows Defender's behavioral ML engine may falsely flag it (`Behavior:Win32/DefenseEvasion.A!ml`). Run this command once in an **Administrator PowerShell** to add permanent exclusions (supports `*` wildcards for all versions):
+Because MultiRoblox extracts its unsigned helper (`RobloxNative.exe`) to `%APPDATA%\multiroblox` and closes Roblox's singleton mutex/event handles across processes, Windows Defender's behavioral ML engine may falsely flag it (`Behavior:Win32/DefenseEvasion.A!ml`). `Add-MpPreference` natively supports `*` wildcards in both `-ExclusionPath` and `-ExclusionProcess`, so a single rule covers `MultiRoblox_v1.2.X.exe` across all versions. Run this command once in an **Administrator PowerShell**:
 
 **中文說明（防止 Windows Defender 誤判隔離）：**
-由於 MultiRoblox 會在啟動時將未簽章的輔助程式（`RobloxNative.exe`）釋放至 `%APPDATA%\multiroblox`，並跨處理序關閉 Roblox 的單開限制 Handle，Windows Defender 的機器學習行為偵測可能會誤判為 `Behavior:Win32/DefenseEvasion.A!ml`。請以**系統管理員身分**開啟 PowerShell 執行以下指令一次，即可永久加入排除名單（支援 `*` 萬用字元，適用未來所有版本）：
+由於 MultiRoblox 會在啟動時將未簽章的輔助程式（`RobloxNative.exe`）釋放至 `%APPDATA%\multiroblox`，並跨處理序關閉 Roblox 的單開限制 Handle，Windows Defender 的機器學習行為偵測可能會誤判為 `Behavior:Win32/DefenseEvasion.A!ml`。`Add-MpPreference` 的 `-ExclusionPath` 與 `-ExclusionProcess` 皆原生支援 `*` 萬用字元，請以**系統管理員身分**開啟 PowerShell 執行以下指令一次，即可自動涵蓋所有 `MultiRoblox_v1.2.X.exe` 版本：
 
 ```powershell
-Add-MpPreference -ExclusionPath "$env:USERPROFILE\Desktop\MultiRoblox-RAM", "$env:APPDATA\multiroblox", "$env:USERPROFILE\Desktop\MultiRoblox*.exe" -ExclusionProcess "MultiRoblox*.exe", "RobloxNative.exe"
+Add-MpPreference -ExclusionPath "$env:USERPROFILE\Desktop\MultiRoblox-RAM", "$env:USERPROFILE\Desktop\MultiRoblox-RAM\MultiRoblox\dist\release_*\MultiRoblox_v*.exe", "$env:USERPROFILE\Desktop\MultiRoblox_v*.exe", "$env:APPDATA\multiroblox" -ExclusionProcess "MultiRoblox_v*.exe", "MultiRoblox.exe", "RobloxNative.exe"
 ```
 
 ---
@@ -51,7 +51,7 @@ Add-MpPreference -ExclusionPath "$env:USERPROFILE\Desktop\MultiRoblox-RAM", "$en
 ## Features
 
 ### 👤 Accounts
-- Launch as many accounts side by side as you want
+- Launch as many accounts side by side as you want, and auto-align running windows into a 2-column screen grid (`1x2`, `2x2`, `3x2`, ...) with one click
 - Sign in through a real Roblox login window, or paste a cookie directly
 - Set a game ID, invite link, or private server link per account so it launches straight there
 - Per-account target FPS cap (15, 30, or 60 FPS; default 30 FPS) applied to Roblox's global client settings on launch

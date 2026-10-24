@@ -33,7 +33,7 @@ window.DEFAULT_THEME = 'dark';
 <body>
 <div id="titlebar">
   <div class="tb-brand">
-    <div class="tb-name">MultiRoblox</div>
+    <div class="tb-name" id="tb-app-title">MultiRoblox</div>
     <span class="tb-version" id="tb-roblox-ver">-</span>
     <span class="tb-running" id="tb-running" title="Roblox instances launched by MultiRoblox and still running" style="display:none"></span>
   </div>
@@ -72,6 +72,9 @@ window.DEFAULT_THEME = 'dark';
       <span class="material-icons-round">terminal</span>Logs
     </button>
     <div class="nav-spacer"></div>
+    <button class="btn btn-ghost" id="nav-align" onclick="alignRobloxWindows()">
+      <span class="material-icons-round" style="font-size:15px">grid_view</span>Align Roblox
+    </button>
     <button class="btn btn-danger kill-roblox-btn" id="nav-kill" onclick="mixKillAll()">
       <span class="material-icons-round" style="font-size:15px">power_settings_new</span>Kill Roblox
     </button>
@@ -357,7 +360,6 @@ window.DEFAULT_THEME = 'dark';
           <!-- Info row -->
           <div class="sc">
             <div class="sc-head">About</div>
-            <div class="sr"><div class="sr-left"><div class="sr-label">MultiRoblox</div><div class="sr-desc" id="stat-app-ver">Version -</div></div></div>
             <div class="sr"><div class="sr-left"><div class="sr-label">Accounts saved</div></div><span class="badge" id="stat-count">0</span></div>
             <div class="sr"><div class="sr-left"><div class="sr-label">Roblox version</div></div><span class="badge" id="stat-rblx-ver">-</span></div>
           </div>

@@ -626,8 +626,14 @@ internal static class AntiAfk
     [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hWnd, int nIndex);
     [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
     [DllImport("user32.dll")] static extern bool SetLayeredWindowAttributes(IntPtr hWnd, uint crKey, byte bAlpha, uint dwFlags);
+    [StructLayout(LayoutKind.Sequential)]
+    struct RECT { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr hWnd);
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+    [DllImport("user32.dll")] static extern int GetSystemMetrics(int nIndex);
     [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+    [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out RECT pvAttribute, int cbAttribute);
 
     delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
@@ -637,13 +643,31 @@ internal static class AntiAfk
     const int WS_EX_LAYERED = 0x00080000;
     const uint LWA_ALPHA = 0x00000002;
     const int DWMWA_TRANSITIONS_FORCEDISABLED = 3;
-    static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
-    const uint SWP_NOSIZE = 0x0001, SWP_NOMOVE = 0x0002, SWP_NOACTIVATE = 0x0010;
+    const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
+    const uint SPI_GETWORKAREA = 0x0030;
+    const uint SWP_NOSIZE = 0x0001, SWP_NOMOVE = 0x0002, SWP_NOZORDER = 0x0004, SWP_NOACTIVATE = 0x0010, SWP_FRAMECHANGED = 0x0020, SWP_SHOWWINDOW = 0x0040, SWP_NOSENDCHANGING = 0x0400;
 
     static uint ThreadOf(IntPtr hWnd)
     {
         if (hWnd == IntPtr.Zero) return 0;
         uint pid; return GetWindowThreadProcessId(hWnd, out pid);
+    }
+
+    static void EnsureOpaque(IntPtr hWnd)
+    {
+        if (hWnd == IntPtr.Zero) return;
+        try
+        {
+            int exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
+            if ((exStyle & WS_EX_LAYERED) != 0)
+            {
+                SetLayeredWindowAttributes(hWnd, 0, 255, LWA_ALPHA);
+                Thread.Sleep(20);
+                SetWindowLong(hWnd, GWL_EXSTYLE, exStyle & ~WS_EX_LAYERED);
+                SetWindowPos(hWnd, IntPtr.Zero, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+            }
+        }
+        catch { }
     }
 
     // pid -> main visible window, for every running Roblox client.
@@ -680,15 +704,15 @@ internal static class AntiAfk
         finally { if (attached) AttachThreadInput(thisThread, fgThread, false); }
     }
 
-    // Focus one window and send a single benign key tap. For background or
-    // minimised windows, makes the window completely transparent (alpha=0) and
-    // disables DWM animations during the ~40ms tap so it never flashes on screen.
+    // Focus one window and send a single benign key tap.
+    // Only minimised windows are made transparent (alpha=0) during restore/tap/minimise
+    // so open/foreground windows on screen can never vanish or get buried in Z-order.
+    // ~150ms total tap duration spans 2+ frames even at 15 FPS (66.7ms/frame).
     static bool TapWindow(IntPtr hWnd, byte bVk, byte bScan, IntPtr originalFg)
     {
         bool wasMinimised = IsIconic(hWnd);
-        bool hideVisual = (hWnd != originalFg);
+        bool hideVisual = wasMinimised;
         int origExStyle = 0;
-        bool addedLayered = false;
         int one = 1, zero = 0;
         try
         {
@@ -696,28 +720,32 @@ internal static class AntiAfk
             {
                 try { DwmSetWindowAttribute(hWnd, DWMWA_TRANSITIONS_FORCEDISABLED, ref one, sizeof(int)); } catch { }
                 origExStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
-                addedLayered = (origExStyle & WS_EX_LAYERED) == 0;
-                if (addedLayered) SetWindowLong(hWnd, GWL_EXSTYLE, origExStyle | WS_EX_LAYERED);
+                if ((origExStyle & WS_EX_LAYERED) == 0) SetWindowLong(hWnd, GWL_EXSTYLE, origExStyle | WS_EX_LAYERED);
                 SetLayeredWindowAttributes(hWnd, 0, 0, LWA_ALPHA);
             }
             if (wasMinimised) ShowWindow(hWnd, SW_RESTORE);
             ForceForeground(hWnd);
-            Thread.Sleep(15);
+            Thread.Sleep(60);
             keybd_event(bVk, bScan, 0, IntPtr.Zero);               // key down
-            Thread.Sleep(15);
+            Thread.Sleep(50);
             keybd_event(bVk, bScan, KEYEVENTF_KEYUP, IntPtr.Zero); // key up
-            Thread.Sleep(10);
+            Thread.Sleep(40);
             return true;
         }
         catch { return false; }
         finally
         {
-            if (wasMinimised) ShowWindow(hWnd, SW_MINIMIZE);
-            else if (hideVisual) SetWindowPos(hWnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            if (wasMinimised)
+            {
+                ShowWindow(hWnd, SW_MINIMIZE);
+                Thread.Sleep(25);
+            }
             if (hideVisual)
             {
                 SetLayeredWindowAttributes(hWnd, 0, 255, LWA_ALPHA);
-                if (addedLayered) SetWindowLong(hWnd, GWL_EXSTYLE, origExStyle);
+                Thread.Sleep(20);
+                SetWindowLong(hWnd, GWL_EXSTYLE, origExStyle & ~WS_EX_LAYERED);
+                SetWindowPos(hWnd, IntPtr.Zero, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
                 try { DwmSetWindowAttribute(hWnd, DWMWA_TRANSITIONS_FORCEDISABLED, ref zero, sizeof(int)); } catch { }
             }
         }
@@ -780,8 +808,11 @@ internal static class AntiAfk
     {
         byte bVk = (byte)vk;
         byte bScan = (byte)MapVirtualKey((uint)vk, 0);
-        // pid -> UTC time its idle timer last reset (launch or our tap)
+        // pid -> UTC time its idle timer last reset (launch or our tap).
+        // Seed any already-running instances with DateTime.MinValue so they get
+        // tapped on the first pass after MultiRoblox restarts or Anti-AFK turns on.
         var lastReset = new System.Collections.Generic.Dictionary<uint, DateTime>();
+        foreach (var pid in EnumRobloxWindows().Keys) lastReset[pid] = DateTime.MinValue;
 
         while (true)
         {
@@ -790,11 +821,8 @@ internal static class AntiAfk
             if (stop == null) Thread.Sleep(15 * 1000);
             DateTime now = DateTime.UtcNow;
 
-            // Capture the window you're on BEFORE touching anything, so we can
-            // always hand focus back exactly where it was.
-            IntPtr originalFg = GetForegroundWindow();
-
             var windows = EnumRobloxWindows();
+            foreach (var w in windows.Values) EnsureOpaque(w);
 
             var gone = new System.Collections.Generic.List<uint>();
             foreach (var pid in lastReset.Keys) if (!windows.ContainsKey(pid)) gone.Add(pid);
@@ -814,6 +842,24 @@ internal static class AntiAfk
             }
             if (due.Count == 0) continue;
 
+            // Capture the window you're on right before tapping; retry briefly if
+            // Windows is mid-focus-transition (GetForegroundWindow() == IntPtr.Zero).
+            IntPtr originalFg = GetForegroundWindow();
+            if (originalFg == IntPtr.Zero)
+            {
+                Thread.Sleep(20);
+                originalFg = GetForegroundWindow();
+            }
+
+            // Tap background/minimised instances first, and the currently-focused
+            // Roblox window last so it stays on top at the end of the pass.
+            due.Sort((a, b) =>
+            {
+                int aFg = (windows[a] == originalFg) ? 1 : 0;
+                int bFg = (windows[b] == originalFg) ? 1 : 0;
+                return aFg.CompareTo(bFg);
+            });
+
             foreach (var pid in due)
             {
                 if (TapWindow(windows[pid], bVk, bScan, originalFg) && onTap != null) onTap(pid);
@@ -832,12 +878,118 @@ internal static class AntiAfk
         if (hWnd == IntPtr.Zero) return;
         try
         {
-            Thread.Sleep(10);
+            EnsureOpaque(hWnd);
+            Thread.Sleep(35);
             ForceForeground(hWnd);
-            Thread.Sleep(10);
+            Thread.Sleep(35);
             SetForegroundWindow(hWnd); // second pass; focus has settled by now
         }
         catch { }
+    }
+
+    struct WinPos
+    {
+        public uint Pid;
+        public IntPtr Hwnd;
+        public int Cx;
+        public int Cy;
+    }
+
+    public static int AlignWindows(string pidCsv)
+    {
+        var map = EnumRobloxWindows();
+        if (map.Count == 0) return 0;
+
+        var items = new System.Collections.Generic.List<WinPos>();
+        foreach (var kv in map)
+        {
+            IntPtr hWnd = kv.Value;
+            EnsureOpaque(hWnd);
+            if (IsIconic(hWnd) || IsZoomed(hWnd))
+            {
+                ShowWindow(hWnd, SW_RESTORE);
+                Thread.Sleep(25);
+            }
+            RECT r;
+            int cx = 0, cy = 0;
+            if (GetWindowRect(hWnd, out r))
+            {
+                cx = (r.Left + r.Right) / 2;
+                cy = (r.Top + r.Bottom) / 2;
+            }
+            items.Add(new WinPos { Pid = kv.Key, Hwnd = hWnd, Cx = cx, Cy = cy });
+        }
+
+        int n = items.Count;
+        if (n == 0) return 0;
+
+        RECT work = new RECT { Left = 0, Top = 0, Right = GetSystemMetrics(0), Bottom = GetSystemMetrics(1) };
+        IntPtr buf = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(RECT)));
+        try
+        {
+            if (SystemParametersInfo(SPI_GETWORKAREA, 0, buf, 0))
+                work = (RECT)Marshal.PtrToStructure(buf, typeof(RECT));
+        }
+        finally { Marshal.FreeHGlobal(buf); }
+
+        int workW = work.Right - work.Left;
+        int workH = work.Bottom - work.Top;
+        if (workW <= 0 || workH <= 0) return 0;
+
+        int cols = n >= 2 ? 2 : 1;
+        int rows = (n + cols - 1) / cols;
+
+        // 1. Sort top-to-bottom by vertical center (Cy) to group windows into rows.
+        items.Sort((a, b) =>
+        {
+            int c = a.Cy.CompareTo(b.Cy);
+            if (c != 0) return c;
+            c = a.Cx.CompareTo(b.Cx);
+            return c != 0 ? c : a.Pid.CompareTo(b.Pid);
+        });
+
+        // 2. Within each row of `cols` windows, sort left-to-right by horizontal center (Cx)
+        // so a window in top-right stays in top-right even if its Y differs slightly from top-left.
+        for (int r = 0; r < n; r += cols)
+        {
+            int count = Math.Min(cols, n - r);
+            items.Sort(r, count, System.Collections.Generic.Comparer<WinPos>.Create((a, b) =>
+            {
+                int c = a.Cx.CompareTo(b.Cx);
+                if (c != 0) return c;
+                c = a.Cy.CompareTo(b.Cy);
+                return c != 0 ? c : a.Pid.CompareTo(b.Pid);
+            }));
+        }
+
+        for (int i = 0; i < n; i++)
+        {
+            IntPtr hWnd = items[i].Hwnd;
+
+            int col = i % cols;
+            int row = i / cols;
+            int x1 = work.Left + (workW * col) / cols;
+            int x2 = work.Left + (workW * (col + 1)) / cols;
+            int y1 = work.Top + (workH * row) / rows;
+            int y2 = work.Top + (workH * (row + 1)) / rows;
+            int targetW = x2 - x1;
+            int targetH = y2 - y1;
+
+            RECT winRect, extRect;
+            int padL = 0, padT = 0, padW = 0, padH = 0;
+            if (GetWindowRect(hWnd, out winRect) &&
+                DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, out extRect, Marshal.SizeOf(typeof(RECT))) == 0)
+            {
+                padL = winRect.Left - extRect.Left;
+                padT = winRect.Top - extRect.Top;
+                padW = (winRect.Right - winRect.Left) - (extRect.Right - extRect.Left);
+                padH = (winRect.Bottom - winRect.Top) - (extRect.Bottom - extRect.Top);
+            }
+
+            SetWindowPos(hWnd, IntPtr.Zero, x1 + padL, y1 + padT, targetW + padW, targetH + padH, SWP_SHOWWINDOW | SWP_NOSENDCHANGING);
+            BringWindowToTop(hWnd);
+        }
+        return n;
     }
 }
 
@@ -1040,6 +1192,13 @@ internal static class Daemon
                 case "pids":
                     Reply(id, PidList());
                     break;
+
+                case "align":
+                {
+                    string pidCsv = p.Length > 2 ? p[2] : "";
+                    Reply(id, AntiAfk.AlignWindows(pidCsv).ToString());
+                    break;
+                }
 
                 case "closehandles":
                 {

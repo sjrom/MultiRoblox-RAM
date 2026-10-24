@@ -474,6 +474,20 @@ pub async fn roblox_set_volume(
 }
 
 #[tauri::command]
+pub async fn roblox_align_windows(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Value, ()> {
+    match crate::helper::call(&app, &state, "align", crate::helper::DEFAULT_TIMEOUT).await {
+        Ok(out) => {
+            let count = out.trim().parse::<usize>().unwrap_or(0);
+            Ok(serde_json::json!({ "ok": true, "aligned": count }))
+        }
+        Err(e) => Ok(serde_json::json!({ "ok": false, "error": e })),
+    }
+}
+
+#[tauri::command]
 pub async fn roblox_kill_all(app: AppHandle, state: State<'_, AppState>) -> Result<Value, ()> {
     let accounts = storage::load_accounts(&state);
     let running_names: Vec<String> = state
