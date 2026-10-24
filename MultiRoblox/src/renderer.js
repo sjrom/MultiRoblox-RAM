@@ -208,6 +208,19 @@ async function continueInit() {
   positionNavSlider(); // covers landing on the default page without a goTo() call
   detectRobloxVersion();
   showAppVersion();
+  if (!settings.defenderNoticeShown) {
+    settings.defenderNoticeShown = true;
+    api.saveSettings(settings);
+    openDefenderModal('first_run');
+  }
+  api.onHelperError(() => {
+    if (!_helperErrorShown) {
+      _helperErrorShown = true;
+      openDefenderModal('error');
+    }
+  });
+  checkRuntimeEnv();
+  checkUpdates();
   startStatusPoll();
   if (settings.autoTrim) startAutoTrimLoop();
   startTrackingLoop();
@@ -364,7 +377,39 @@ async function detectRobloxVersion() {
 async function showAppVersion() {
   let v;
   try { v = await api.getAppVersion(); } catch { return; }
-  if (v) { const t = 'MultiRoblox v' + v; document.title = t; const el = document.getElementById('tb-app-title'); if (el) el.textContent = t; }
+  if (v) {
+    const t = 'MultiRoblox v' + v;
+    document.title = t;
+    const el = document.getElementById('tb-app-title');
+    if (el) el.textContent = t;
+    const statEl = document.getElementById('stat-app-ver');
+    if (statEl) statEl.textContent = 'v' + v;
+  }
+}
+
+async function manualCheckUpdates() {
+  const btn = document.getElementById('btn-check-updates');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="material-icons-round" style="font-size:14px;margin-right:4px">hourglass_empty</span>Checking...';
+  }
+  try {
+    const res = await api.checkForUpdates();
+    if (res && res.has_update) {
+      showUpdateToast(res.latest_version, res.url);
+    } else {
+      let v = '';
+      try { v = await api.getAppVersion(); } catch {}
+      toast('You are on the latest version' + (v ? ' (v' + v + ')' : ''), 'ok');
+    }
+  } catch (e) {
+    toast('Update check failed: ' + (e.message || e), 'err');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<span class="material-icons-round" style="font-size:14px;margin-right:4px">sync</span>Check for updates';
+    }
+  }
 }
 
 function applySettings() {
@@ -1972,9 +2017,128 @@ function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').re
 function toast(msg, type) {
   type = type || '';
   const el = document.getElementById('toast'), icon = type === 'ok' ? 'check_circle' : 'cancel';
+  el.style.pointerEvents = '';
   el.innerHTML = '<span class="material-icons-round">' + icon + '</span>' + esc(msg);
   el.className = 'toast show ' + type; clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 2700);
+}
+
+function showUpdateToast(version, url) {
+  const el = document.getElementById('toast');
+  el.innerHTML = '<span class="material-icons-round" style="color:var(--ac)">system_update</span>' +
+    '<span>New version <b>' + esc(version) + '</b> available</span>' +
+    '<button class="toast-btn" style="margin-left:8px;padding:3px 8px;background:var(--ac);color:var(--on-ac);border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;pointer-events:auto">Download</button>' +
+    '<button class="toast-close" style="margin-left:4px;background:transparent;border:none;color:var(--t3);cursor:pointer;font-size:16px;line-height:1;pointer-events:auto">&times;</button>';
+  el.className = 'toast show ok';
+  el.style.pointerEvents = 'auto';
+  clearTimeout(toastTimer);
+  const btn = el.querySelector('.toast-btn');
+  if (btn) btn.onclick = () => { api.openExternal(url); el.classList.remove('show'); el.style.pointerEvents = ''; };
+  const close = el.querySelector('.toast-close');
+  if (close) close.onclick = () => { el.classList.remove('show'); el.style.pointerEvents = ''; };
+  toastTimer = setTimeout(() => {
+    el.classList.remove('show');
+    el.style.pointerEvents = '';
+  }, 10000);
+}
+
+let _defenderCmd = '';
+let _helperErrorShown = false;
+async function openDefenderModal(reason) {
+  const desc = document.getElementById('defender-modal-desc');
+  if (desc) {
+    desc.innerHTML = reason === 'error'
+      ? 'MultiRoblox native helper was blocked or failed to start. Adding an exclusion to Windows Defender will resolve this issue.<br><br>輔助程式（<code>RobloxNative.exe</code>）啟動失敗或遭防毒軟體隔離，請將 MultiRoblox 加入排除名單以恢復功能。'
+      : 'MultiRoblox uses a native background helper (<code>RobloxNative.exe</code>) to enable multi-instance and Anti-AFK. Windows Defender\'s behavioral heuristics may mistakenly flag or block it. Adding an exclusion ensures uninterrupted operation.<br><br>MultiRoblox 透過原生輔助程式（<code>RobloxNative.exe</code>）實現多開與防掛踢。Windows Defender 的行為偵測可能會誤判隔離，建議加入排除名單以確保正常運作。';
+  }
+  openModal('m-defender');
+  try {
+    const info = await api.getDefenderInfo();
+    _defenderCmd = info.command;
+    const cmdEl = document.getElementById('defender-cmd-text');
+    if (cmdEl) cmdEl.textContent = _defenderCmd;
+  } catch (e) {}
+}
+
+async function copyDefenderCommand() {
+  if (!_defenderCmd) {
+    try {
+      const info = await api.getDefenderInfo();
+      _defenderCmd = info.command;
+    } catch(e) {}
+  }
+  if (_defenderCmd) {
+    navigator.clipboard.writeText(_defenderCmd).then(() => toast('Command copied to clipboard', 'ok'));
+  }
+}
+
+async function openDefenderSettings() {
+  try {
+    await api.openDefenderSettings();
+    toast('已開啟 Windows 安全性設定', 'ok');
+  } catch (e) {
+    toast('無法開啟 Windows 安全性頁面', 'err');
+  }
+}
+
+async function applyDefenderExclusion() {
+  const btn = document.getElementById('btn-add-exclusion');
+  if (btn) { btn.disabled = true; btn.textContent = '加入中...'; }
+  try {
+    await api.addDefenderExclusion();
+    toast('Defender 排除名單已加入！', 'ok');
+    closeModal('m-defender');
+    refreshMultiStatus();
+  } catch (e) {
+    await copyDefenderCommand();
+    toast('UAC 已取消，指令已複製到剪貼簿！', 'err');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<span class="material-icons-round" style="font-size:14px;margin-right:4px">security</span>一鍵加入 (UAC)';
+    }
+  }
+}
+
+async function checkRuntimeEnv() {
+  try {
+    const env = await api.checkRuntimeEnv();
+    if (!env) return;
+    if (!env.dotnet_ok) {
+      const body = document.getElementById('runtime-modal-body');
+      const btn = document.getElementById('btn-runtime-action');
+      if (body) {
+        body.innerHTML = '<b>.NET Framework 4.8 Runtime</b> is not installed on this system. The native helper (<code>RobloxNative.exe</code>) requires it for multi-instance and Anti-AFK.<br><br>系統缺少 <b>.NET Framework 4.8</b>，輔助程式需要此元件才能啟用多開與防掛踢功能。';
+      }
+      if (btn) {
+        btn.textContent = 'Download .NET 4.8';
+        btn.onclick = () => { api.openExternal('https://dotnet.microsoft.com/download/dotnet-framework/net48'); closeModal('m-runtime'); };
+      }
+      openModal('m-runtime');
+    } else if (!env.roblox_installed) {
+      const body = document.getElementById('runtime-modal-body');
+      const btn = document.getElementById('btn-runtime-action');
+      if (body) {
+        body.innerHTML = '<b>Roblox Player</b> was not detected on this PC. Install Roblox from the official website or via the <b>Versions</b> tab before launching accounts.<br><br>尚未偵測到已安裝的 <b>Roblox Player</b>，請先安裝 Roblox 或透過左側 <b>Versions</b> 分頁下載。';
+      }
+      if (btn) {
+        btn.textContent = 'Open Versions';
+        btn.onclick = () => { closeModal('m-runtime'); goTo('versions'); };
+      }
+      openModal('m-runtime');
+    }
+  } catch (e) {}
+}
+
+async function checkUpdates() {
+  try {
+    const res = await api.checkForUpdates();
+    if (res && res.has_update) {
+      showUpdateToast(res.latest_version, res.url);
+    }
+  } catch (e) {
+    console.debug('Update check failed:', e);
+  }
 }
 
 // Defaults multi-instance on for a fresh install, but leaves an explicit

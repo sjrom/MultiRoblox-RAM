@@ -114,8 +114,10 @@ pub async fn ensure_native_helper(app: &AppHandle, state: &AppState) -> Option<P
     }
     {
         let cached = state.native_helper_path.lock().unwrap().clone();
-        if let Some(resolved) = cached {
-            return resolved;
+        if let Some(Some(p)) = cached {
+            if p.exists() {
+                return Some(p);
+            }
         }
     }
     let resolved = resolve_native_helper(app).await;
@@ -787,6 +789,10 @@ fn find_roblox_install_by_version(version: &str) -> Option<(&'static str, PathBu
         }
     }
     None
+}
+
+pub fn has_roblox_install() -> bool {
+    get_latest_roblox_install().is_some()
 }
 
 fn get_latest_roblox_install() -> Option<(&'static str, PathBuf, PathBuf)> {

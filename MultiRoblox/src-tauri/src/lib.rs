@@ -19,6 +19,11 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(windows)]
+    if !commands::ensure_webview2_runtime() {
+        return;
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -201,6 +206,11 @@ pub fn run() {
             commands::login_cancel,
             commands::open_external,
             commands::app_version,
+            commands::check_for_updates,
+            commands::get_defender_info,
+            commands::add_defender_exclusion,
+            commands::open_defender_settings,
+            commands::check_runtime_env,
             commands::tracking_capture_preview,
             commands::tracking_capture_and_send,
             commands::tracking_validate_webhook,

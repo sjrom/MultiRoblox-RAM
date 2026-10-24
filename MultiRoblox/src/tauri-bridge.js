@@ -46,6 +46,12 @@
     cancelLaunch: (id) => invoke('roblox_launch_cancel', { id }),
     openExternal: (url) => invoke('open_external', { url }),
     getAppVersion: () => invoke('app_version'),
+    checkForUpdates: () => invoke('check_for_updates'),
+    getDefenderInfo: () => invoke('get_defender_info'),
+    addDefenderExclusion: () => invoke('add_defender_exclusion'),
+    openDefenderSettings: () => invoke('open_defender_settings'),
+    checkRuntimeEnv: () => invoke('check_runtime_env'),
+    onHelperError: (cb) => listen('helper:error', () => cb()),
 
     trackingCapturePreview: (id) => invoke('tracking_capture_preview', { id }),
     trackingCaptureAndSend: (id, username, webhookUrl, regions) => invoke('tracking_capture_and_send', { id, username, webhookUrl, regions }),

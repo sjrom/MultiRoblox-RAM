@@ -760,3 +760,289 @@ pub fn open_external(url: String) -> Result<(), String> {
 pub fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
+
+#[derive(serde::Serialize)]
+pub struct UpdateInfo {
+    pub has_update: bool,
+    pub latest_version: String,
+    pub url: String,
+}
+
+fn parse_version(v: &str) -> Vec<u32> {
+    v.trim_start_matches(|c| c == 'v' || c == 'V')
+        .split('.')
+        .filter_map(|s| s.split('-').next().unwrap_or("").parse::<u32>().ok())
+        .collect()
+}
+
+fn is_newer_version(latest: &str, current: &str) -> bool {
+    let lat = parse_version(latest);
+    let cur = parse_version(current);
+    !lat.is_empty() && lat > cur
+}
+
+#[tauri::command]
+pub async fn check_for_updates(state: State<'_, AppState>) -> Result<UpdateInfo, ()> {
+    let current_version = env!("CARGO_PKG_VERSION");
+    let resp = state
+        .http
+        .get("https://api.github.com/repos/sjrom/MultiRoblox-RAM/releases/latest")
+        .header("User-Agent", format!("MultiRoblox/{current_version}"))
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await;
+
+    let res = match resp {
+        Ok(r) if r.status().is_success() => r.json::<serde_json::Value>().await.ok(),
+        _ => None,
+    };
+
+    if let Some(data) = res {
+        let tag = data.get("tag_name").and_then(|v| v.as_str()).unwrap_or("");
+        let raw_url = data.get("html_url").and_then(|v| v.as_str()).unwrap_or("");
+        let url = if raw_url.starts_with("https://github.com/") {
+            raw_url
+        } else {
+            "https://github.com/sjrom/MultiRoblox-RAM/releases/latest"
+        };
+        if is_newer_version(tag, current_version) {
+            return Ok(UpdateInfo {
+                has_update: true,
+                latest_version: tag.to_string(),
+                url: url.to_string(),
+            });
+        }
+    }
+
+    Ok(UpdateInfo {
+        has_update: false,
+        latest_version: String::new(),
+        url: String::new(),
+    })
+}
+
+#[derive(serde::Serialize)]
+pub struct DefenderInfo {
+    pub command: String,
+    pub app_data_dir: String,
+    pub exe_dir: String,
+}
+
+#[tauri::command]
+pub fn get_defender_info() -> DefenderInfo {
+    let app_data = crate::paths::app_data_dir();
+    let current_exe = std::env::current_exe().unwrap_or_default();
+    let exe_dir = current_exe.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+    let exe_name = current_exe
+        .file_name()
+        .and_then(|n| n.to_str())
+        .filter(|n| !n.to_ascii_lowercase().starts_with("multiroblox"))
+        .unwrap_or("MultiRoblox*.exe");
+
+    let app_data_str = app_data.to_string_lossy().to_string();
+    let exe_dir_str = exe_dir.to_string_lossy().to_string();
+
+    let command = format!(
+        "Add-MpPreference -ExclusionPath '{}', '{}' -ExclusionProcess 'RobloxNative.exe', '{}'",
+        exe_dir_str, app_data_str, exe_name
+    );
+
+    DefenderInfo {
+        command,
+        app_data_dir: app_data_str,
+        exe_dir: exe_dir_str,
+    }
+}
+
+#[tauri::command]
+pub async fn add_defender_exclusion(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let info = get_defender_info();
+        // Visible execution without -WindowStyle Hidden, transparently showing progress and auto-closing.
+        let ps_code = format!(
+            "& {{ \
+                Write-Host 'Adding MultiRoblox exclusions to Windows Defender...' -ForegroundColor Cyan; \
+                {}; \
+                Write-Host '[OK] Exclusions added successfully! Closing in 2 seconds...' -ForegroundColor Green; \
+                Start-Sleep -Seconds 2; \
+            }}",
+            info.command
+        );
+        let escaped_ps = ps_code.replace('\'', "''");
+        let launcher = format!(
+            "Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile -Command {}'",
+            escaped_ps
+        );
+
+        let status = tokio::task::spawn_blocking(move || {
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            std::process::Command::new("powershell")
+                .args(["-NoProfile", "-Command", &launcher])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status()
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+
+        if status.success() {
+            *state.helper_next_attempt.lock().unwrap() = 0;
+            crate::native::start_mutex_holder(&app, &state).await;
+            Ok(())
+        } else {
+            Err(format!("Exit code: {:?}", status.code()))
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (&app, &state);
+        Ok(())
+    }
+}
+
+#[tauri::command]
+pub fn open_defender_settings() -> Result<(), String> {
+    tauri_plugin_opener::open_url("windowsdefender://exclusions", None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+pub struct RuntimeEnvInfo {
+    pub dotnet_ok: bool,
+    pub roblox_installed: bool,
+}
+
+pub fn is_dotnet4_installed() -> bool {
+    if !cfg!(windows) {
+        return true;
+    }
+    let win = std::env::var("WINDIR").unwrap_or_else(|_| r"C:\Windows".to_string());
+    let p64 = std::path::Path::new(&win).join(r"Microsoft.NET\Framework64\v4.0.30319\mscorlib.dll");
+    let p32 = std::path::Path::new(&win).join(r"Microsoft.NET\Framework\v4.0.30319\mscorlib.dll");
+    p64.exists() || p32.exists()
+}
+
+#[tauri::command]
+pub fn check_runtime_env() -> RuntimeEnvInfo {
+    RuntimeEnvInfo {
+        dotnet_ok: is_dotnet4_installed(),
+        roblox_installed: crate::native::has_roblox_install(),
+    }
+}
+
+#[cfg(windows)]
+pub fn ensure_webview2_runtime() -> bool {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use std::os::windows::process::CommandExt;
+
+    #[link(name = "advapi32")]
+    extern "system" {
+        fn RegGetValueW(
+            hkey: isize,
+            lpSubKey: *const u16,
+            lpValue: *const u16,
+            dwFlags: u32,
+            pdwType: *mut u32,
+            pvData: *mut u16,
+            pcbData: *mut u32,
+        ) -> i32;
+    }
+    #[link(name = "user32")]
+    extern "system" {
+        fn MessageBoxW(
+            hWnd: isize,
+            lpText: *const u16,
+            lpCaption: *const u16,
+            uType: u32,
+        ) -> i32;
+    }
+
+    fn wide(s: &str) -> Vec<u16> {
+        OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+    }
+
+    const HKEY_LOCAL_MACHINE: isize = -2147483646i32 as isize;
+    const HKEY_CURRENT_USER: isize = -2147483647i32 as isize;
+    const RRF_RT_REG_SZ: u32 = 0x0000_0002;
+
+    let val_name = wide("pv");
+    let keys = [
+        (
+            HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+        ),
+        (
+            HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+        ),
+        (
+            HKEY_CURRENT_USER,
+            r"Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+        ),
+    ];
+
+    for (root, subkey) in keys {
+        let sub = wide(subkey);
+        let mut buf = [0u16; 64];
+        let mut size = (buf.len() * 2) as u32;
+        let status = unsafe {
+            RegGetValueW(
+                root,
+                sub.as_ptr(),
+                val_name.as_ptr(),
+                RRF_RT_REG_SZ,
+                std::ptr::null_mut(),
+                buf.as_mut_ptr(),
+                &mut size,
+            )
+        };
+        if status == 0 {
+            let len = buf.iter().position(|&c| c == 0).unwrap_or(0);
+            let ver = String::from_utf16_lossy(&buf[..len]);
+            if !ver.is_empty() && ver != "0.0.0.0" {
+                return true;
+            }
+        }
+    }
+
+    // MB_YESNO (0x04) | MB_ICONWARNING (0x30) | MB_SYSTEMMODAL (0x1000)
+    let title = wide("MultiRoblox - Missing Runtime Component");
+    let msg = wide(
+        "Microsoft Edge WebView2 Runtime is required to run MultiRoblox.\n\
+         MultiRoblox 需要安裝 Microsoft Edge WebView2 Runtime 才能顯示介面。\n\n\
+         Would you like to open the official Microsoft download page now?\n\
+         是否立即開啟微軟官方下載頁面？",
+    );
+    let resp = unsafe { MessageBoxW(0, msg.as_ptr(), title.as_ptr(), 0x1034) };
+    if resp == 6 {
+        // IDYES = 6
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "start", "", "https://go.microsoft.com/fwlink/p/?LinkId=2124703"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn();
+    }
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_version_comparison() {
+        assert!(is_newer_version("v1.2.11", "1.2.10"));
+        assert!(is_newer_version("1.3.0", "1.2.10"));
+        assert!(is_newer_version("2.0.0", "1.2.10"));
+        assert!(!is_newer_version("v1.2.10", "1.2.10"));
+        assert!(!is_newer_version("v1.2.9", "1.2.10"));
+        assert!(!is_newer_version("1.2.9", "1.2.10"));
+        assert!(!is_newer_version("", "1.2.10"));
+    }
+}

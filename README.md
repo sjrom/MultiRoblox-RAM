@@ -1,15 +1,15 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/PookiePepelsss/MultiRoblox-RAM/main/MultiRoblox/src-tauri/icons/128x128.png" width="88" />
+<img src="MultiRoblox/src-tauri/icons/128x128.png" width="88" />
 
 # MultiRoblox
 
 **Run as many Roblox accounts as you want, all at once, on Windows.**
 
-[![platform](https://img.shields.io/badge/platform-windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/PookiePepelsss/MultiRoblox-RAM/releases)
+[![platform](https://img.shields.io/badge/platform-windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/sjrom/MultiRoblox-RAM/releases)
 [![built with tauri](https://img.shields.io/badge/built%20with-tauri-24C8DB?style=for-the-badge&logo=tauri&logoColor=white)](https://tauri.app/)
 [![license](https://img.shields.io/badge/license-PolyForm%20-3DDC97?style=for-the-badge)](LICENSE)
-[![latest release](https://img.shields.io/github/v/tag/PookiePepelsss/MultiRoblox-RAM?style=for-the-badge&label=latest&color=FF6B6B)](https://github.com/PookiePepelsss/MultiRoblox-RAM/releases)
+[![latest release](https://img.shields.io/github/v/tag/sjrom/MultiRoblox-RAM?style=for-the-badge&label=latest&color=FF6B6B)](https://github.com/sjrom/MultiRoblox-RAM/releases)
 
 <br>
 
@@ -21,17 +21,17 @@
 
 ## Quick start
 
-No installer needed. Grab the exe from [**Releases**](https://github.com/PookiePepelsss/MultiRoblox-RAM/releases) and run it.
+No installer needed. Grab the exe from [**Releases**](https://github.com/sjrom/MultiRoblox-RAM/releases) and run it.
 
 Or build it yourself:
 
 ```bash
-git clone https://github.com/PookiePepelsss/MultiRoblox-RAM.git
+git clone https://github.com/sjrom/MultiRoblox-RAM.git
 cd MultiRoblox-RAM/MultiRoblox
 build.bat
 ```
 
-> Requires the [Rust toolchain](https://rustup.rs). The finished exe lands in `dist\release_<version>\MultiRoblox_v<version>.exe` (for example, `dist\release_1.2.10\MultiRoblox_v1.2.10.exe`). Rebuilding removes the previous output directory for that version; other versions are kept.
+> Requires the [Rust toolchain](https://rustup.rs). The finished exe lands in `dist\release_<version>\MultiRoblox_v<version>.exe` (for example, `dist\release_1.2.11\MultiRoblox_v1.2.11.exe`). Rebuilding removes the previous output directory for that version; other versions are kept.
 
 To bump the app version, edit only `[package].version` in `MultiRoblox/src-tauri/Cargo.toml`, then run `build.bat`. Tauri, the release directory, and the release EXE filename use that version. Cargo updates `Cargo.lock` during the build; commit that generated change along with the version bump.
 

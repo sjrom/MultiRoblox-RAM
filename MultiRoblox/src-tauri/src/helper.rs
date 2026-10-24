@@ -13,7 +13,7 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStdin, Command};
 use tokio::sync::oneshot;
@@ -159,8 +159,14 @@ pub fn ensure<'a>(
         if now_ms() < *state.helper_next_attempt.lock().unwrap() {
             return None;
         }
-        let exe = crate::native::ensure_native_helper(app, state).await?;
-        let helper = spawn(app, state, &exe).await?;
+        let Some(exe) = crate::native::ensure_native_helper(app, state).await else {
+            let _ = app.emit("helper:error", ());
+            return None;
+        };
+        let Some(helper) = spawn(app, state, &exe).await else {
+            let _ = app.emit("helper:error", ());
+            return None;
+        };
         *guard = Some(helper.clone());
         Some(helper)
     })

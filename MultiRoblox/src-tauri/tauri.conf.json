@@ -31,9 +31,9 @@
     "targets": [
       "nsis"
     ],
-    "publisher": "PookiePepelsss",
-    "copyright": "Copyright (c) 2026 PookiePepelsss",
-    "homepage": "https://github.com/PookiePepelsss/MultiRoblox-RAM",
+    "publisher": "sjrom",
+    "copyright": "Copyright (c) 2026 PookiePepelsss (Original Author); Modified by sjrom",
+    "homepage": "https://github.com/sjrom/MultiRoblox-RAM",
     "shortDescription": "Run and manage multiple Roblox accounts",
     "longDescription": "MultiRoblox lets you run several Roblox clients at once and manage multiple accounts from a single dashboard.",
     "windows": {

@@ -2,7 +2,9 @@
 setlocal
 title Build
 cd /d "%~dp0" || (echo ERROR: Could not enter the project directory & pause & exit /b 1)
+set "BUILD_START_TIME=%TIME%"
 echo Building MultiRoblox executable...
+echo Build started: %BUILD_START_TIME%
 echo.
 
 where cargo >nul 2>&1
@@ -38,6 +40,8 @@ copy /y "src-tauri\target\release\MultiRoblox.exe" "%BUILD_OUTPUT%\MultiRoblox_v
 if errorlevel 1 (echo Could not copy MultiRoblox.exe & pause & exit /b 1)
 
 echo.
+echo Build started:  %BUILD_START_TIME%
+echo Build finished: %TIME%
 echo Done. Executable: %BUILD_OUTPUT%\MultiRoblox_v%BUILD_VERSION%.exe
 pause
 exit /b 0
