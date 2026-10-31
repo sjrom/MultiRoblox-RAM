@@ -1090,10 +1090,8 @@ pub fn ensure_webview2_runtime() -> bool {
     // MB_YESNO (0x04) | MB_ICONWARNING (0x30) | MB_SYSTEMMODAL (0x1000)
     let title = wide("MultiRoblox - Missing Runtime Component");
     let msg = wide(
-        "Microsoft Edge WebView2 Runtime is required to run MultiRoblox.\n\
-         MultiRoblox 需要安裝 Microsoft Edge WebView2 Runtime 才能顯示介面。\n\n\
-         Would you like to open the official Microsoft download page now?\n\
-         是否立即開啟微軟官方下載頁面？",
+        "Microsoft Edge WebView2 Runtime is required to run MultiRoblox.\n\n\
+         Would you like to open the official Microsoft download page now?",
     );
     let resp = unsafe { MessageBoxW(0, msg.as_ptr(), title.as_ptr(), 0x1034) };
     if resp == 6 {

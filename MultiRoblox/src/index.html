@@ -971,18 +971,17 @@ window.DEFAULT_THEME = 'dark';
       <div class="modal-title" style="margin-bottom:0">Windows Defender Exclusion</div>
     </div>
     <div class="modal-sub" id="defender-modal-desc" style="font-size:12px;line-height:1.5;color:var(--t2);margin-bottom:14px">
-      MultiRoblox uses a native background helper (<code>RobloxNative.exe</code>) to enable multi-instance and Anti-AFK. Windows Defender's behavioral heuristics may mistakenly flag or block it. Adding an exclusion ensures uninterrupted operation.<br><br>
-      MultiRoblox 透過原生輔助程式（<code>RobloxNative.exe</code>）實現多開與防掛踢。Windows Defender 的行為偵測可能會誤判隔離，建議加入排除名單以確保正常運作。
+      MultiRoblox uses a native background helper (<code>RobloxNative.exe</code>) to enable multi-instance and Anti-AFK. Windows Defender's behavioral heuristics may mistakenly flag or block it. Adding an exclusion ensures uninterrupted operation.
     </div>
     <div style="background:var(--s2);border:1px solid var(--bd);border-radius:var(--r);padding:10px 12px;margin-bottom:16px">
       <div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;margin-bottom:4px">PowerShell Command</div>
       <div id="defender-cmd-text" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--t1);word-break:break-all;user-select:all;max-height:60px;overflow-y:auto">Loading…</div>
     </div>
     <div class="modal-actions" style="gap:8px;flex-wrap:wrap">
-      <button class="btn btn-ghost" onclick="closeModal('m-defender')">Dismiss / 稍後</button>
-      <button class="btn btn-ghost" onclick="openDefenderSettings()"><span class="material-icons-round" style="font-size:14px;margin-right:4px">open_in_new</span>Windows 安全性</button>
-      <button class="btn btn-ghost" onclick="copyDefenderCommand()"><span class="material-icons-round" style="font-size:14px;margin-right:4px">content_copy</span>複製指令</button>
-      <button class="btn btn-primary" id="btn-add-exclusion" onclick="applyDefenderExclusion()"><span class="material-icons-round" style="font-size:14px;margin-right:4px">security</span>一鍵加入 (UAC)</button>
+      <button class="btn btn-ghost" onclick="closeModal('m-defender')">Dismiss</button>
+      <button class="btn btn-ghost" onclick="openDefenderSettings()"><span class="material-icons-round" style="font-size:14px;margin-right:4px">open_in_new</span>Windows Security</button>
+      <button class="btn btn-ghost" onclick="copyDefenderCommand()"><span class="material-icons-round" style="font-size:14px;margin-right:4px">content_copy</span>Copy Command</button>
+      <button class="btn btn-primary" id="btn-add-exclusion" onclick="applyDefenderExclusion()"><span class="material-icons-round" style="font-size:14px;margin-right:4px">security</span>Add Exclusion (UAC)</button>
     </div>
   </div>
 </div>
@@ -997,6 +996,35 @@ window.DEFAULT_THEME = 'dark';
     <div class="modal-actions" style="gap:8px">
       <button class="btn btn-ghost" onclick="closeModal('m-runtime')">Close</button>
       <button class="btn btn-primary" id="btn-runtime-action">Download</button>
+    </div>
+  </div>
+</div>
+<!-- update available modal -->
+<div class="overlay" id="m-update" data-backdrop-close="true" onclick="if(event.target===this)closeModal('m-update')">
+  <div class="modal" onclick="event.stopPropagation()" style="width:380px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <div style="width:36px;height:36px;border-radius:9px;background:var(--ac-g);color:var(--ac);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <span class="material-icons-round" style="font-size:21px">system_update</span>
+      </div>
+      <div>
+        <div class="modal-title" style="margin-bottom:2px">New Update Available</div>
+        <div style="font-size:12px;color:var(--t2)">A newer version of MultiRoblox is ready to download.</div>
+      </div>
+    </div>
+    <div style="background:var(--s2);border:1px solid var(--bd);border-radius:var(--r);padding:12px 14px;margin:14px 0;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;margin-bottom:3px">Current Version</div>
+        <div id="upd-cur-ver" style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:var(--t2)">-</div>
+      </div>
+      <span class="material-icons-round" style="font-size:18px;color:var(--t3)">arrow_forward</span>
+      <div style="text-align:right">
+        <div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;margin-bottom:3px">Latest Version</div>
+        <div id="upd-new-ver" style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:var(--green)">-</div>
+      </div>
+    </div>
+    <div class="modal-actions" style="gap:8px">
+      <button class="btn btn-ghost" onclick="closeModal('m-update')">Later</button>
+      <button class="btn btn-primary" id="btn-update-download"><span class="material-icons-round" style="font-size:15px;margin-right:4px">open_in_new</span>Download</button>
     </div>
   </div>
 </div>

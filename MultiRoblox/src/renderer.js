@@ -2023,23 +2023,21 @@ function toast(msg, type) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 2700);
 }
 
-function showUpdateToast(version, url) {
-  const el = document.getElementById('toast');
-  el.innerHTML = '<span class="material-icons-round" style="color:var(--ac)">system_update</span>' +
-    '<span>New version <b>' + esc(version) + '</b> available</span>' +
-    '<button class="toast-btn" style="margin-left:8px;padding:3px 8px;background:var(--ac);color:var(--on-ac);border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;pointer-events:auto">Download</button>' +
-    '<button class="toast-close" style="margin-left:4px;background:transparent;border:none;color:var(--t3);cursor:pointer;font-size:16px;line-height:1;pointer-events:auto">&times;</button>';
-  el.className = 'toast show ok';
-  el.style.pointerEvents = 'auto';
-  clearTimeout(toastTimer);
-  const btn = el.querySelector('.toast-btn');
-  if (btn) btn.onclick = () => { api.openExternal(url); el.classList.remove('show'); el.style.pointerEvents = ''; };
-  const close = el.querySelector('.toast-close');
-  if (close) close.onclick = () => { el.classList.remove('show'); el.style.pointerEvents = ''; };
-  toastTimer = setTimeout(() => {
-    el.classList.remove('show');
-    el.style.pointerEvents = '';
-  }, 10000);
+async function showUpdateToast(version, url) {
+  let cur = '';
+  try { cur = await api.getAppVersion(); } catch {}
+  const curEl = document.getElementById('upd-cur-ver');
+  if (curEl) curEl.textContent = cur ? (cur.startsWith('v') ? cur : 'v' + cur) : '-';
+  const newEl = document.getElementById('upd-new-ver');
+  if (newEl) newEl.textContent = version.startsWith('v') ? version : 'v' + version;
+  const btn = document.getElementById('btn-update-download');
+  if (btn) {
+    btn.onclick = () => {
+      api.openExternal(url);
+      closeModal('m-update');
+    };
+  }
+  openModal('m-update');
 }
 
 let _defenderCmd = '';
@@ -2048,8 +2046,8 @@ async function openDefenderModal(reason) {
   const desc = document.getElementById('defender-modal-desc');
   if (desc) {
     desc.innerHTML = reason === 'error'
-      ? 'MultiRoblox native helper was blocked or failed to start. Adding an exclusion to Windows Defender will resolve this issue.<br><br>輔助程式（<code>RobloxNative.exe</code>）啟動失敗或遭防毒軟體隔離，請將 MultiRoblox 加入排除名單以恢復功能。'
-      : 'MultiRoblox uses a native background helper (<code>RobloxNative.exe</code>) to enable multi-instance and Anti-AFK. Windows Defender\'s behavioral heuristics may mistakenly flag or block it. Adding an exclusion ensures uninterrupted operation.<br><br>MultiRoblox 透過原生輔助程式（<code>RobloxNative.exe</code>）實現多開與防掛踢。Windows Defender 的行為偵測可能會誤判隔離，建議加入排除名單以確保正常運作。';
+      ? 'MultiRoblox native helper was blocked or failed to start. Adding an exclusion to Windows Defender will resolve this issue.'
+      : 'MultiRoblox uses a native background helper (<code>RobloxNative.exe</code>) to enable multi-instance and Anti-AFK. Windows Defender\'s behavioral heuristics may mistakenly flag or block it. Adding an exclusion ensures uninterrupted operation.';
   }
   openModal('m-defender');
   try {
@@ -2075,27 +2073,27 @@ async function copyDefenderCommand() {
 async function openDefenderSettings() {
   try {
     await api.openDefenderSettings();
-    toast('已開啟 Windows 安全性設定', 'ok');
+    toast('Opened Windows Security settings', 'ok');
   } catch (e) {
-    toast('無法開啟 Windows 安全性頁面', 'err');
+    toast('Could not open Windows Security settings', 'err');
   }
 }
 
 async function applyDefenderExclusion() {
   const btn = document.getElementById('btn-add-exclusion');
-  if (btn) { btn.disabled = true; btn.textContent = '加入中...'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Adding...'; }
   try {
     await api.addDefenderExclusion();
-    toast('Defender 排除名單已加入！', 'ok');
+    toast('Defender exclusion added', 'ok');
     closeModal('m-defender');
     refreshMultiStatus();
   } catch (e) {
     await copyDefenderCommand();
-    toast('UAC 已取消，指令已複製到剪貼簿！', 'err');
+    toast('UAC cancelled; command copied to clipboard', 'err');
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.innerHTML = '<span class="material-icons-round" style="font-size:14px;margin-right:4px">security</span>一鍵加入 (UAC)';
+      btn.innerHTML = '<span class="material-icons-round" style="font-size:14px;margin-right:4px">security</span>Add Exclusion (UAC)';
     }
   }
 }
@@ -2108,7 +2106,7 @@ async function checkRuntimeEnv() {
       const body = document.getElementById('runtime-modal-body');
       const btn = document.getElementById('btn-runtime-action');
       if (body) {
-        body.innerHTML = '<b>.NET Framework 4.8 Runtime</b> is not installed on this system. The native helper (<code>RobloxNative.exe</code>) requires it for multi-instance and Anti-AFK.<br><br>系統缺少 <b>.NET Framework 4.8</b>，輔助程式需要此元件才能啟用多開與防掛踢功能。';
+        body.innerHTML = '<b>.NET Framework 4.8 Runtime</b> is not installed on this system. The native helper (<code>RobloxNative.exe</code>) requires it for multi-instance and Anti-AFK.';
       }
       if (btn) {
         btn.textContent = 'Download .NET 4.8';
@@ -2119,7 +2117,7 @@ async function checkRuntimeEnv() {
       const body = document.getElementById('runtime-modal-body');
       const btn = document.getElementById('btn-runtime-action');
       if (body) {
-        body.innerHTML = '<b>Roblox Player</b> was not detected on this PC. Install Roblox from the official website or via the <b>Versions</b> tab before launching accounts.<br><br>尚未偵測到已安裝的 <b>Roblox Player</b>，請先安裝 Roblox 或透過左側 <b>Versions</b> 分頁下載。';
+        body.innerHTML = '<b>Roblox Player</b> was not detected on this PC. Install Roblox from the official website or via the <b>Versions</b> tab before launching accounts.';
       }
       if (btn) {
         btn.textContent = 'Open Versions';
