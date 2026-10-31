@@ -2,6 +2,7 @@ mod commands;
 mod crypto;
 mod encryption;
 mod helper;
+mod instance_labels;
 mod jsonfile;
 mod login;
 mod native;
@@ -13,6 +14,7 @@ mod state;
 mod storage;
 mod tracking;
 mod tray;
+mod window_positions;
 
 use state::AppState;
 use tauri::Manager;
@@ -248,8 +250,10 @@ pub fn run() {
                     // its stdin gives the daemon EOF and it exits itself;
                     // which is also what covers a crash or a Task Manager
                     // kill, where none of this code runs at all.
+                    commands::fps_reset_if_low();
                     commands::set_global_settings_readonly(false);
                     let state = app_handle.state::<AppState>();
+                    window_positions::update(&state);
                     helper::shutdown_blocking(&state);
                 }
                 _ => {}

@@ -273,6 +273,7 @@ pub fn reset_state_for_wipe(state: &AppState) {
         .helper_shutdown
         .store(false, std::sync::atomic::Ordering::SeqCst);
     state.account_pids.lock().unwrap().clear();
+    *state.window_positions.lock().unwrap() = Default::default();
     state.manual_priority.lock().unwrap().clear();
     state.watched_accounts.lock().unwrap().clear();
     state.miss_counts.lock().unwrap().clear();
@@ -651,6 +652,7 @@ async fn wait_for_pids_closed(
 }
 
 pub async fn kill_all_roblox(app: &AppHandle, state: &AppState) -> Value {
+    crate::window_positions::update(state);
     // First, so a launch that is mid-flight or waiting its turn bails at its
     // next checkpoint instead of spawning after we have already killed and
     // reported. Without this, kill during a package launch is not a stop.
@@ -713,6 +715,7 @@ pub async fn kill_all_roblox(app: &AppHandle, state: &AppState) -> Value {
 }
 
 pub async fn kill_account_roblox(app: &AppHandle, state: &AppState, account_id: &str) -> Value {
+    crate::window_positions::update(state);
     // Same reasoning as kill_all_roblox: killing an account whose launch has
     // not finished must abandon that launch, not race it.
     cancel_launch(state, account_id);
@@ -1009,6 +1012,7 @@ static WATCH_TICK_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 
 async fn watch_tick(app: &AppHandle) {
     let state = app.state::<AppState>();
+    crate::window_positions::update(&state);
     if state.watched_accounts.lock().unwrap().is_empty() {
         stop_watch_poll_if_idle(&state);
         return;
@@ -1241,8 +1245,8 @@ pub async fn do_launch(
         .to_string();
     let account_fps_cap = match stored.get("fpsCap").and_then(|v| v.as_i64()) {
         Some(15) => 15,
-        Some(60) => 60,
-        _ => 30,
+        Some(30) => 30,
+        _ => 60,
     };
     let cookie: &str = if stored_cookie.is_empty() {
         cookie
@@ -1483,13 +1487,14 @@ pub async fn do_launch(
     }
 
     let mut spawned_pid: Option<u32> = None;
-    let _ = crate::commands::fps_write(account_fps_cap as f64);
+    crate::commands::apply_account_fps_xml(account_fps_cap);
     for attempt in 0..3 {
         if attempt > 0 {
             tokio::time::sleep(Duration::from_secs(3)).await;
             // The retry backoff is the longest stretch of this whole path;
             // bail out here rather than making the user wait it out.
             if launch_cancelled(state, account_id) {
+                crate::commands::fps_reset_if_low();
                 return cancelled_result();
             }
         }
@@ -1518,11 +1523,12 @@ pub async fn do_launch(
 
     match spawned_pid {
         Some(pid) => {
-            state
-                .account_pids
-                .lock()
-                .unwrap()
-                .insert(account_id.to_string(), pid);
+            {
+                let mut pids = state.account_pids.lock().unwrap();
+                pids.insert(account_id.to_string(), pid);
+                crate::window_positions::launched(state, pid);
+            }
+            crate::instance_labels::remember(account_id, pid);
             // Fired the instant the process exists, not after the trailing
             // priority/bookkeeping work below or the JSON round-trip back to
             // the caller; that gap (small on its own, but stacked behind
@@ -1530,11 +1536,21 @@ pub async fn do_launch(
             // account after the first) is what made the UI's "launched"
             // color feel like it lagged the real state of the world.
             let _ = app.emit("roblox:started", account_id);
+            if account_fps_cap < 60 {
+                let app_fps = app.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(Duration::from_secs(6)).await;
+                    let st = app_fps.state::<AppState>();
+                    let _guard = st.launch_lock.lock().await;
+                    crate::commands::fps_reset_if_low();
+                });
+            }
             // Stagger countdown starts from actual spawn time so trailing
             // bookkeeping (priority policy, storage write) counts toward it.
             *state.last_launch_ts.lock().unwrap() = now_ms();
         }
         None => {
+            crate::commands::fps_reset_if_low();
             let accounts = crate::storage::load_accounts(state);
             let username = find_username(&accounts, account_id);
             emit_log(

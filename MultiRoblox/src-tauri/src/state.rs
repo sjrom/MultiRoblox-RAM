@@ -27,6 +27,7 @@ pub struct AppState {
 
     pub native_helper_path: Mutex<Option<Option<std::path::PathBuf>>>, // Some(None) = unavailable
     pub account_pids: Mutex<HashMap<String, u32>>,
+    pub window_positions: Mutex<crate::window_positions::WindowPositions>,
     pub manual_priority: Mutex<HashMap<String, String>>,
     pub watched_accounts: Mutex<HashMap<String, i64>>,
     pub miss_counts: Mutex<HashMap<String, u32>>,
@@ -86,6 +87,7 @@ impl AppState {
             antiafk_on: AtomicBool::new(false),
             native_helper_path: Mutex::new(None),
             account_pids: Mutex::new(HashMap::new()),
+            window_positions: Mutex::new(crate::window_positions::WindowPositions::default()),
             manual_priority: Mutex::new(HashMap::new()),
             watched_accounts: Mutex::new(HashMap::new()),
             miss_counts: Mutex::new(HashMap::new()),

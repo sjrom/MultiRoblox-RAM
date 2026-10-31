@@ -203,7 +203,7 @@ pub fn accounts_add(state: State<AppState>, account: Map<String, Value>) -> Resu
     let mut accounts = storage::load_accounts(&state);
     let mut a = Value::Object(account);
     if a.get("fpsCap").is_none() {
-        a["fpsCap"] = Value::Number(30.into());
+        a["fpsCap"] = Value::Number(60.into());
     }
     a["id"] = Value::String(uuid::Uuid::new_v4().to_string());
     a["createdAt"] = Value::String(chrono::Utc::now().to_rfc3339());
@@ -228,6 +228,7 @@ pub fn accounts_remove(state: State<AppState>, id: String) -> Result<bool, Strin
     crate::native::cancel_launch(&state, &id);
     // Drop bookkeeping so watch_tick stops polling a removed account.
     state.account_pids.lock().unwrap().remove(&id);
+    crate::window_positions::forget(&state, &id);
     state.watched_accounts.lock().unwrap().remove(&id);
     state.miss_counts.lock().unwrap().remove(&id);
     state.auto_relaunch_history.lock().unwrap().remove(&id);
@@ -370,26 +371,41 @@ pub fn fps_read() -> i64 {
     }
     let p = global_settings_path();
     let Ok(xml) = std::fs::read_to_string(&p) else {
-        return 30;
+        return 60;
     };
     match FPS_CAP_RE.captures(&xml).and_then(|c| c[1].parse::<i64>().ok()) {
         Some(v) if v >= 9999 => 0,
         Some(v) if v > 0 => v,
-        _ => 30,
+        _ => 60,
     }
 }
 
-#[tauri::command]
-pub fn fps_write(cap: f64) -> Value {
+static RESTORE_FPS_CAP: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(60);
+
+pub fn read_xml_fps() -> Option<i64> {
+    let p = global_settings_path();
+    let xml = std::fs::read_to_string(&p).ok()?;
+    FPS_CAP_RE.captures(&xml).and_then(|c| c[1].parse::<i64>().ok())
+}
+
+pub fn apply_account_fps_xml(account_fps_cap: i64) {
+    if let Some(cur) = read_xml_fps() {
+        if cur >= 60 {
+            RESTORE_FPS_CAP.store(cur, std::sync::atomic::Ordering::SeqCst);
+            if account_fps_cap >= 60 {
+                return;
+            }
+        }
+    }
+    fps_write_xml(account_fps_cap);
+}
+
+pub fn fps_write_xml(cap: i64) -> bool {
     let p = global_settings_path();
     let Ok(xml) = std::fs::read_to_string(&p) else {
-        return serde_json::json!({ "ok": false, "error": "GlobalBasicSettings_13.xml not found - launch Roblox once to create it." });
+        return false;
     };
-    let raw = cap.round().max(0.0) as i64;
-    let mut s = load_settings();
-    s.insert("fpsCap".into(), Value::Number(raw.into()));
-    save_settings(&s);
-    let value = if raw == 0 { 9999 } else { raw };
+    let value = if cap <= 0 { 9999 } else { cap };
     let new_xml = if FPS_CAP_RE.is_match(&xml) {
         FPS_CAP_RE
             .replace(&xml, format!(r#"<int name="FramerateCap">{}</int>"#, value))
@@ -402,10 +418,29 @@ pub fn fps_write(cap: f64) -> Value {
         .to_string()
     };
     set_global_settings_readonly(false);
-    if std::fs::write(&p, new_xml).is_err() {
-        return serde_json::json!({ "ok": false, "error": "Failed to write GlobalBasicSettings_13.xml (file may be locked by another app)" });
+    let ok = std::fs::write(&p, new_xml).is_ok();
+    set_global_settings_readonly(cap < 60);
+    ok
+}
+
+pub fn fps_reset_if_low() {
+    if let Some(v) = read_xml_fps() {
+        if (1..60).contains(&v) {
+            let restore = RESTORE_FPS_CAP.load(std::sync::atomic::Ordering::SeqCst).max(60);
+            fps_write_xml(restore);
+        }
     }
-    set_global_settings_readonly(true);
+}
+
+#[tauri::command]
+pub fn fps_write(cap: f64) -> Value {
+    let raw = cap.round().max(0.0) as i64;
+    let mut s = load_settings();
+    s.insert("fpsCap".into(), Value::Number(raw.into()));
+    save_settings(&s);
+    if !fps_write_xml(raw) {
+        return serde_json::json!({ "ok": false, "error": "Failed to write GlobalBasicSettings_13.xml (file may be missing or locked)" });
+    }
     serde_json::json!({ "ok": true })
 }
 
@@ -1036,7 +1071,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_fps_reset_condition() {
+        let check = |v: i64| (1..60).contains(&v);
+        assert!(check(15));
+        assert!(check(30));
+        assert!(check(59));
+        assert!(!check(60));
+        assert!(!check(0));
+    }
+
+    #[test]
     fn test_version_comparison() {
+        assert!(is_newer_version("v1.2.12", "1.2.11"));
         assert!(is_newer_version("v1.2.11", "1.2.10"));
         assert!(is_newer_version("1.3.0", "1.2.10"));
         assert!(is_newer_version("2.0.0", "1.2.10"));

@@ -27,6 +27,23 @@ pub const SLOW_TIMEOUT: Duration = Duration::from_secs(30);
 
 type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<String, String>>>>>;
 
+fn afk_log_message(account_id: Option<&str>, accounts: &[serde_json::Value]) -> String {
+    let message = "Anti-AFK: tapped a Roblox window";
+    match account_id {
+        Some(id) => {
+            let username = accounts
+                .iter()
+                .find(|a| a.get("id").and_then(|v| v.as_str()) == Some(id))
+                .and_then(|a| a.get("username"))
+                .and_then(|v| v.as_str())
+                .filter(|name| !name.is_empty())
+                .unwrap_or(id);
+            format!("{message} for {username}")
+        }
+        None => message.to_string(),
+    }
+}
+
 /// Backoff after a spawn that failed for any reason other than "someone else
 /// already has one"; stops a broken helper (missing .NET, AV quarantine)
 /// from being re-spawned on every status poll.
@@ -294,12 +311,25 @@ async fn spawn(app: &AppHandle, state: &AppState, exe: &Path) -> Option<Arc<Help
                                 duplicate_r.store(true, Ordering::SeqCst);
                             }
                             "AFK" => {
+                                let pid = payload.parse::<u32>().ok();
+                                let st = app_r.state::<AppState>();
+                                let account_id = st
+                                    .account_pids
+                                    .lock()
+                                    .unwrap()
+                                    .iter()
+                                    .find(|(_, tracked_pid)| Some(**tracked_pid) == pid)
+                                    .map(|(id, _)| id.clone());
+                                let account_id = account_id.or_else(|| {
+                                    pid.and_then(crate::instance_labels::account_for_pid)
+                                });
+                                let accounts = crate::storage::load_accounts_raw();
                                 crate::native::emit_log(
                                     &app_r,
                                     "info",
                                     "afk",
-                                    "Anti-AFK: tapped a Roblox window",
-                                    Some(serde_json::json!({ "pid": payload.parse::<u32>().ok() })),
+                                    &afk_log_message(account_id.as_deref(), &accounts),
+                                    Some(serde_json::json!({ "pid": pid })),
                                 );
                             }
                             _ => {}
@@ -561,5 +591,35 @@ pub async fn is_holding_mutex(state: &AppState) -> bool {
     match helper {
         Some(h) => h.alive() && h.mutex_held.load(Ordering::SeqCst),
         None => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn afk_log_names_the_corresponding_account() {
+        let accounts = vec![
+            json!({ "id": "a", "username": "FirstAccount" }),
+            json!({ "id": "b", "username": "SecondAccount" }),
+        ];
+        assert_eq!(
+            afk_log_message(Some("b"), &accounts),
+            "Anti-AFK: tapped a Roblox window for SecondAccount"
+        );
+        assert_eq!(
+            afk_log_message(None, &accounts),
+            "Anti-AFK: tapped a Roblox window"
+        );
+        assert_eq!(
+            afk_log_message(Some("removed"), &accounts),
+            "Anti-AFK: tapped a Roblox window for removed"
+        );
+        assert_eq!(
+            afk_log_message(Some("a"), &[json!({ "id": "a", "username": "" })]),
+            "Anti-AFK: tapped a Roblox window for a"
+        );
     }
 }

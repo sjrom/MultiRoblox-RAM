@@ -940,7 +940,7 @@ function render() {
           <div class="card-name">${esc(a.nickname || a.username || 'Unknown')}</div>
           <span class="card-expired" title="This account's cookie is no longer valid. Re-add the account to refresh it."><span class="material-icons-round">error_outline</span>Expired</span>
         </div>
-        <div class="card-uid">${a.userId ? 'ID ' + a.userId : 'No ID'} · ${(a.fpsCap === 15 || a.fpsCap === 60) ? a.fpsCap : 30} FPS</div>
+        <div class="card-uid">${a.userId ? 'ID ' + a.userId : 'No ID'} · ${(a.fpsCap === 15 || a.fpsCap === 30) ? a.fpsCap : 60} FPS</div>
       </div>
       <div class="card-game ${a.gameTarget ? 'visible' : ''}" id="gt-${a.id}" title="${esc(a.gameTarget || '')}">${a.gameTarget ? esc(truncate(_gameNameCache[a.id] || extractTargetLabel(a.gameTarget), 22)) : ''}</div>
       <div class="card-row">
@@ -1484,7 +1484,7 @@ function cancelLogin() {
 
 async function finishLogin(res) {
   setStatus('login-status', 'ok', '<span class="material-icons-round">check_circle</span>Signed in as ' + esc(res.username));
-  const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: res.cookie, gameTarget: '', fpsCap: 30 });
+  const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: res.cookie, gameTarget: '', fpsCap: 60 });
   accounts.push(a); render();
   setTimeout(() => {
     closeModal('m-login');
@@ -1494,9 +1494,9 @@ async function finishLogin(res) {
   }, 800);
 }
 
-let _editFps = 30;
+let _editFps = 60;
 function selectEditFps(fps) {
-  _editFps = (fps === 15 || fps === 60) ? fps : 30;
+  _editFps = (fps === 15 || fps === 30) ? fps : 60;
   document.querySelectorAll('#edit-fps-seg .fps-seg-btn').forEach(btn => {
     btn.classList.toggle('active', parseInt(btn.dataset.fps, 10) === _editFps);
   });
@@ -3167,7 +3167,7 @@ async function genHistAdd(i) {
   try {
     const res = await api.validateCookie(h.cookie);
     if (!res || !res.username) { toast('Cookie invalid or expired', 'err'); return; }
-    const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: h.cookie, gameTarget: '', nickname: '', fpsCap: 30 });
+    const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: h.cookie, gameTarget: '', nickname: '', fpsCap: 60 });
     if (a) { accounts.push(a); render(); toast('Added ' + res.username + ' to accounts', 'ok'); }
   } catch(e) { toast('Failed to add: ' + e.message, 'err'); }
 }
@@ -3180,7 +3180,7 @@ async function genAddToAccounts() {
   try {
     const r = await api.loginWithCredentials(_lastGenData.username, _lastGenData.password);
     if (!r.success || !r.cookie) { toast(r.error || 'Login failed', 'err'); if (btn) { btn.disabled = false; if (btnLabel) btnLabel.textContent = 'add'; } return; }
-    const a = await api.addAccount({ username: r.username || _lastGenData.username, userId: r.userId || null, cookie: r.cookie, gameTarget: '', nickname: '', fpsCap: 30 });
+    const a = await api.addAccount({ username: r.username || _lastGenData.username, userId: r.userId || null, cookie: r.cookie, gameTarget: '', nickname: '', fpsCap: 60 });
     if (a) { accounts.push(a); render(); toast('Added ' + (r.username || _lastGenData.username) + ' to accounts!', 'ok'); }
     if (btn) { btn.disabled = false; if (btnLabel) btnLabel.textContent = 'add'; }
   } catch(e) { toast('Failed: ' + (e.message || e), 'err'); if (btn) { btn.disabled = false; if (btnLabel) btnLabel.textContent = 'add'; } }
