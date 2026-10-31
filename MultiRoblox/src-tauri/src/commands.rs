@@ -810,43 +810,84 @@ fn parse_version(v: &str) -> Vec<u32> {
         .collect()
 }
 
-fn is_newer_version(latest: &str, current: &str) -> bool {
-    let lat = parse_version(latest);
-    let cur = parse_version(current);
-    !lat.is_empty() && lat > cur
-}
-
 #[tauri::command]
-pub async fn check_for_updates(state: State<'_, AppState>) -> Result<UpdateInfo, ()> {
+pub async fn check_for_updates(state: State<'_, AppState>) -> Result<UpdateInfo, String> {
     let current_version = env!("CARGO_PKG_VERSION");
-    let resp = state
+    let ua = format!("MultiRoblox/{current_version}");
+    let mut best_ver = parse_version(current_version);
+    let mut best_info: Option<UpdateInfo> = None;
+
+    // 1. Check /releases list and pick the highest semver (ignores commit/publish
+    //    timestamps that break GitHub's /releases/latest when clocks shift).
+    if let Ok(resp) = state
         .http
-        .get("https://api.github.com/repos/sjrom/MultiRoblox-RAM/releases/latest")
-        .header("User-Agent", format!("MultiRoblox/{current_version}"))
+        .get("https://api.github.com/repos/sjrom/MultiRoblox-RAM/releases?per_page=20")
+        .header("User-Agent", &ua)
+        .header("Cache-Control", "no-cache")
         .timeout(std::time::Duration::from_secs(10))
         .send()
-        .await;
-
-    let res = match resp {
-        Ok(r) if r.status().is_success() => r.json::<serde_json::Value>().await.ok(),
-        _ => None,
-    };
-
-    if let Some(data) = res {
-        let tag = data.get("tag_name").and_then(|v| v.as_str()).unwrap_or("");
-        let raw_url = data.get("html_url").and_then(|v| v.as_str()).unwrap_or("");
-        let url = if raw_url.starts_with("https://github.com/") {
-            raw_url
-        } else {
-            "https://github.com/sjrom/MultiRoblox-RAM/releases/latest"
-        };
-        if is_newer_version(tag, current_version) {
-            return Ok(UpdateInfo {
-                has_update: true,
-                latest_version: tag.to_string(),
-                url: url.to_string(),
-            });
+        .await
+    {
+        if resp.status().is_success() {
+            if let Ok(releases) = resp.json::<Vec<serde_json::Value>>().await {
+                for rel in &releases {
+                    if rel.get("draft").and_then(|v| v.as_bool()).unwrap_or(false)
+                        || rel.get("prerelease").and_then(|v| v.as_bool()).unwrap_or(false)
+                    {
+                        continue;
+                    }
+                    let tag = rel.get("tag_name").and_then(|v| v.as_str()).unwrap_or("");
+                    let ver = parse_version(tag);
+                    if !ver.is_empty() && ver > best_ver {
+                        let raw_url = rel.get("html_url").and_then(|v| v.as_str()).unwrap_or("");
+                        let url = if raw_url.starts_with("https://github.com/") {
+                            raw_url.to_string()
+                        } else {
+                            format!("https://github.com/sjrom/MultiRoblox-RAM/releases/tag/{tag}")
+                        };
+                        best_ver = ver;
+                        best_info = Some(UpdateInfo {
+                            has_update: true,
+                            latest_version: tag.to_string(),
+                            url,
+                        });
+                    }
+                }
+            }
         }
+    }
+
+    // 2. Also check /tags so even a pushed tag without a formal Release entry
+    //    (or while GitHub CDN caches /releases) is still detected by semver.
+    if let Ok(resp) = state
+        .http
+        .get("https://api.github.com/repos/sjrom/MultiRoblox-RAM/tags?per_page=20")
+        .header("User-Agent", &ua)
+        .header("Cache-Control", "no-cache")
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+    {
+        if resp.status().is_success() {
+            if let Ok(tags) = resp.json::<Vec<serde_json::Value>>().await {
+                for t in &tags {
+                    let tag = t.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let ver = parse_version(tag);
+                    if !ver.is_empty() && ver > best_ver {
+                        best_ver = ver;
+                        best_info = Some(UpdateInfo {
+                            has_update: true,
+                            latest_version: tag.to_string(),
+                            url: format!("https://github.com/sjrom/MultiRoblox-RAM/releases/tag/{tag}"),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(info) = best_info {
+        return Ok(info);
     }
 
     Ok(UpdateInfo {
@@ -1078,6 +1119,12 @@ mod tests {
         assert!(check(59));
         assert!(!check(60));
         assert!(!check(0));
+    }
+
+    fn is_newer_version(latest: &str, current: &str) -> bool {
+        let lat = parse_version(latest);
+        let cur = parse_version(current);
+        !lat.is_empty() && lat > cur
     }
 
     #[test]
