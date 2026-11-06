@@ -55,6 +55,25 @@ pub fn account_for_pid(pid: u32) -> Option<String> {
     matching_account(&instances, pid, process_created(pid)?)
 }
 
+/// Returns all `(account_id, pid)` pairs from `instance-labels.json` whose
+/// OS process is still alive with the exact same creation timestamp.
+pub fn alive_instances() -> Vec<(String, u32)> {
+    let path = crate::paths::app_data_dir().join("instance-labels.json");
+    let Some(instances) = load(&path) else {
+        return Vec::new();
+    };
+    instances
+        .into_iter()
+        .filter_map(|(id, inst)| {
+            if process_created(inst.pid) == Some(inst.created) {
+                Some((id, inst.pid))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 #[cfg(windows)]
 fn process_created(pid: u32) -> Option<u64> {
     use windows::Win32::Foundation::{CloseHandle, FILETIME};

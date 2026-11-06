@@ -2331,7 +2331,7 @@ dependencies = [
 
 [[package]]
 name = "mr_tauri"
-version = "1.2.12"
+version = "1.2.13"
 dependencies = [
  "aes",
  "aes-gcm",

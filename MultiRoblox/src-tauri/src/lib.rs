@@ -74,6 +74,7 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     let state = handle2.state::<AppState>();
                     native::start_mutex_holder(&handle2, &state).await;
+                    native::adopt_existing_instances(&handle2, &state).await;
                     if !multi_instance {
                         native::set_multi_instance(&handle2, &state, false).await;
                     }

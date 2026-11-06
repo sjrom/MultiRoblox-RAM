@@ -88,6 +88,7 @@
     rddListVersions: () => invoke('rdd_list_versions'),
     rddDeleteVersion: (hash) => invoke('rdd_delete_version', { hash }),
     onRddProgress: (cb) => listen('rdd:progress', (e) => cb(e.payload)),
+    onRobloxUpdating: (cb) => listen('roblox:updating', (e) => cb(e.payload)),
     getGameName: (placeId, cookie) => invoke('roblox_get_game_name', { placeIdOrTarget: placeId, cookie }),
     // *.roblox.com sends no CORS headers; fetch() from the webview's real
     // https://tauri.localhost origin gets blocked (Electron's file:// origin was

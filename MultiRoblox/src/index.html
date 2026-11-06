@@ -999,6 +999,27 @@ window.DEFAULT_THEME = 'dark';
     </div>
   </div>
 </div>
+<!-- roblox client updating modal (blocking) -->
+<div class="overlay" id="m-roblox-updating" data-backdrop-close="false">
+  <div class="modal" onclick="event.stopPropagation()" style="width:400px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <div style="width:36px;height:36px;border-radius:9px;background:var(--ac-g);color:var(--ac);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <div class="spin" style="width:18px;height:18px;border-width:2.5px"></div>
+      </div>
+      <div>
+        <div class="modal-title" style="margin-bottom:2px">Updating Roblox Client</div>
+        <div style="font-size:12px;color:var(--t2)">Please wait before starting other accounts.</div>
+      </div>
+    </div>
+    <div id="rblx-upd-msg" style="font-size:12px;line-height:1.5;color:var(--t2);margin:10px 0">
+      Roblox is updating to the latest version...
+    </div>
+    <div id="rblx-upd-bar-wrap" style="background:var(--s2);border:1px solid var(--bd);border-radius:6px;height:8px;overflow:hidden;margin-top:8px">
+      <div id="rblx-upd-bar" style="height:100%;width:0%;background:var(--ac);transition:width 180ms ease"></div>
+    </div>
+    <div id="rblx-upd-pkg" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--t3);margin-top:6px;text-align:right">Preparing...</div>
+  </div>
+</div>
 <!-- update available modal -->
 <div class="overlay" id="m-update" data-backdrop-close="true" onclick="if(event.target===this)closeModal('m-update')">
   <div class="modal" onclick="event.stopPropagation()" style="width:380px">

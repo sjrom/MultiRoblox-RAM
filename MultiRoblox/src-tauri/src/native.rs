@@ -1008,6 +1008,42 @@ pub async fn watch_roblox(app: &AppHandle, account_id: &str) {
     ensure_pid_watcher(app, &st).await;
 }
 
+/// Re-adopts any Roblox instances launched by a previous MultiRoblox session
+/// that are still alive (verified via PID + creation timestamp in
+/// `instance-labels.json` and present in `accounts.json`), so the `(N running)`
+/// badge, green card dots, and watcher loop work across app restarts.
+pub async fn adopt_existing_instances(app: &AppHandle, state: &AppState) {
+    let alive = crate::instance_labels::alive_instances();
+    if alive.is_empty() {
+        return;
+    }
+    let known_ids: std::collections::HashSet<String> = crate::storage::load_accounts_raw()
+        .into_iter()
+        .filter_map(|a| a.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .collect();
+    let mut adopted = 0u32;
+    {
+        let mut pids = state.account_pids.lock().unwrap();
+        let mut watched = state.watched_accounts.lock().unwrap();
+        let mut misses = state.miss_counts.lock().unwrap();
+        let now = now_ms();
+        for (id, pid) in alive {
+            if !known_ids.contains(&id) {
+                continue;
+            }
+            pids.insert(id.clone(), pid);
+            watched.insert(id.clone(), now);
+            misses.insert(id, 0);
+            adopted += 1;
+        }
+    }
+    if adopted > 0 {
+        start_watch_poll(app, app.clone());
+        ensure_pid_watcher(app, state).await;
+        let _ = app.emit("roblox:count", adopted);
+    }
+}
+
 static WATCH_TICK_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 
 async fn watch_tick(app: &AppHandle) {
@@ -1201,6 +1237,137 @@ fn cancelled_result() -> Value {
     serde_json::json!({ "success": false, "cancelled": true, "error": "Launch cancelled" })
 }
 
+async fn is_roblox_installer_running() -> bool {
+    if !cfg!(windows) {
+        return false;
+    }
+    if let Some(out) = tasklist("RobloxPlayerInstaller.exe").await {
+        if TASKLIST_PID_RE.is_match(&out) {
+            return true;
+        }
+    }
+    if let Some(out) = tasklist("RobloxPlayerLauncher.exe").await {
+        if TASKLIST_PID_RE.is_match(&out) {
+            return true;
+        }
+    }
+    false
+}
+
+async fn wait_while_roblox_installer_runs(app: &AppHandle, state: &AppState, account_id: &str) {
+    let mut notified = false;
+    let started = std::time::Instant::now();
+    while is_roblox_installer_running().await {
+        if !notified {
+            notified = true;
+            let _ = app.emit(
+                "roblox:updating",
+                serde_json::json!({
+                    "active": true,
+                    "version": "",
+                    "message": "Roblox installer is currently updating in the background. Waiting for it to finish..."
+                }),
+            );
+            emit_log(
+                app,
+                "info",
+                "launch",
+                "Waiting for running Roblox installer/updater to finish...",
+                None,
+            );
+        }
+        if launch_cancelled(state, account_id) || started.elapsed() > Duration::from_secs(180) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(800)).await;
+    }
+    if notified {
+        let _ = app.emit("roblox:updating", serde_json::json!({ "active": false }));
+    }
+}
+
+async fn ensure_roblox_ready_before_launch(
+    app: &AppHandle,
+    state: &AppState,
+    account_id: &str,
+    lock_channel: bool,
+    version_pin: &str,
+) {
+    // 1. If a RobloxPlayerInstaller.exe is already running, block and wait.
+    wait_while_roblox_installer_runs(app, state, account_id).await;
+    if launch_cancelled(state, account_id) {
+        return;
+    }
+
+    // 2. When no Roblox instances are currently running (cold start) and the
+    //    user hasn't pinned a custom version, check the live Windows version
+    //    against the local vanilla install. If outdated, install the new build
+    //    upfront with a blocking modal so back-to-back Start clicks never spawn
+    //    competing RobloxPlayerInstaller.exe processes.
+    if lock_channel && version_pin == "custom" {
+        return;
+    }
+    if !state.account_pids.lock().unwrap().is_empty() {
+        return;
+    }
+    let Some((root, dir, _)) = get_latest_roblox_install() else {
+        return;
+    };
+    if root != "Roblox" {
+        return;
+    }
+    let installed = dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_string();
+    let Ok(Ok(live)) = tokio::time::timeout(
+        Duration::from_secs(4),
+        crate::roblox_api::get_roblox_version(state, Some("current")),
+    )
+    .await
+    else {
+        return;
+    };
+    if live.is_empty() || live == installed || find_roblox_install_by_version(&live).is_some() {
+        return;
+    }
+
+    let _ = app.emit(
+        "roblox:updating",
+        serde_json::json!({
+            "active": true,
+            "version": live,
+            "message": format!("Updating Roblox from {} to {}...", installed, live)
+        }),
+    );
+    emit_log(
+        app,
+        "info",
+        "launch",
+        &format!("New Roblox build detected ({}); updating before launch...", live),
+        None,
+    );
+    if let Err(e) = crate::rdd::install_version(app, state, &live).await {
+        emit_log(
+            app,
+            "warn",
+            "launch",
+            &format!("Pre-launch Roblox update failed ({}), continuing with normal launch", e),
+            None,
+        );
+    } else {
+        emit_log(
+            app,
+            "ok",
+            "launch",
+            &format!("Roblox updated to {}", live),
+            None,
+        );
+    }
+    let _ = app.emit("roblox:updating", serde_json::json!({ "active": false }));
+}
+
 pub async fn do_launch(
     app: &AppHandle,
     state: &AppState,
@@ -1287,6 +1454,15 @@ pub async fn do_launch(
     } else {
         String::new()
     };
+
+    // Pre-flight check: if Roblox's own installer/updater is already running,
+    // wait for it to finish and notify the frontend to show a blocking modal so
+    // the user cannot click other Start buttons and trigger "Installer
+    // encountered a critical error".
+    ensure_roblox_ready_before_launch(app, state, account_id, lock_channel, &version_pin).await;
+    if launch_cancelled(state, account_id) {
+        return cancelled_result();
+    }
 
     // Run CSRF fetch and version check concurrently — both need network,
     // neither depends on the other. On the common path (CSRF cached, no

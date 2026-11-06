@@ -464,10 +464,32 @@ function applySettings() {
   rddRowUpdate();
   rddRenderList();
   api.onRddProgress(p => {
+    const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
     const bar = document.getElementById('rdd-bar');
-    if (bar && p.total) bar.style.width = Math.round((p.done / p.total) * 100) + '%';
-    rddSetStatus(p.message === 'Done' ? 'Finishing...' : ('Downloading ' + p.message + ' (' + (p.done + 1) + '/' + p.total + ')'), '');
+    if (bar && p.total) bar.style.width = pct + '%';
+    const label = p.message === 'Done' ? 'Finishing...' : ('Downloading ' + p.message + ' (' + (p.done + 1) + '/' + p.total + ')');
+    rddSetStatus(label, '');
+    const updBar = document.getElementById('rblx-upd-bar');
+    if (updBar && p.total) updBar.style.width = pct + '%';
+    const updPkg = document.getElementById('rblx-upd-pkg');
+    if (updPkg && p.total) updPkg.textContent = label;
   });
+  if (api.onRobloxUpdating) {
+    api.onRobloxUpdating(u => {
+      if (u && u.active) {
+        const msgEl = document.getElementById('rblx-upd-msg');
+        if (msgEl) msgEl.textContent = u.message || 'Roblox is updating to the latest version...';
+        const barEl = document.getElementById('rblx-upd-bar');
+        if (barEl) barEl.style.width = u.version ? '0%' : '100%';
+        const pkgEl = document.getElementById('rblx-upd-pkg');
+        if (pkgEl) pkgEl.textContent = u.version ? ('Target: ' + u.version) : 'Waiting for Roblox installer...';
+        openModal('m-roblox-updating');
+      } else {
+        closeModal('m-roblox-updating');
+        detectRobloxVersion();
+      }
+    });
+  }
 }
 
 let _acctQuery = '', _acctFilter = (() => { try { const f = localStorage.getItem('mr-acct-filter'); return (f && f !== 'running' && f !== 'idle') ? f : 'all'; } catch { return 'all'; } })(), _acctView = (() => { try { return localStorage.getItem('mr-acct-view') === 'list' ? 'list' : 'grid'; } catch { return 'grid'; } })();
@@ -2177,7 +2199,7 @@ document.addEventListener('keydown', e => {
       const typing = ['in-target', 'in-nickname', 'in-description', 'in-follow']
         .some(f => document.activeElement === document.getElementById(f));
       if (!typing) closeModal('m-edit');
-    } else document.querySelectorAll('.overlay.open').forEach(m => m.classList.remove('open'));
+    } else document.querySelectorAll('.overlay.open').forEach(m => { if (m.id !== 'm-roblox-updating') m.classList.remove('open'); });
   }
   if ((e.ctrlKey || e.metaKey) && e.key === 'n') { e.preventDefault(); openLogin(); }
   // "/" focuses the account search (when not already typing in a field).
