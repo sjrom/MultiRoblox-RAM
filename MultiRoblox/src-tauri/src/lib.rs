@@ -25,6 +25,7 @@ pub fn run() {
     if !commands::ensure_webview2_runtime() {
         return;
     }
+    helper::kick_other_instances();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())

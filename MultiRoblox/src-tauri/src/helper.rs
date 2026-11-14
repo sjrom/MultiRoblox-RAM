@@ -486,17 +486,52 @@ async fn reapply_state(app: &AppHandle, state: &AppState, helper: &Arc<Helper>) 
     let _ = app;
 }
 
-/// Kills helper processes left over from a previous session. Only ever our
-/// own executable name, and only before we start ours.
+/// Terminates any other running MultiRoblox processes (any version/filename
+/// matching `MultiRoblox*`) without `/T` so their spawned `RobloxPlayerBeta.exe`
+/// instances stay alive for `adopt_existing_instances` to take over.
+pub fn kick_other_instances() {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let my_pid = std::process::id();
+        let _ = std::process::Command::new("taskkill")
+            .args([
+                "/F",
+                "/FI",
+                "IMAGENAME eq MultiRoblox*",
+                "/FI",
+                &format!("PID ne {}", my_pid),
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+}
+
+/// Kills any other MultiRoblox processes and helper processes left over from a
+/// previous session before starting ours.
 async fn sweep_stray_helpers() {
     if !cfg!(windows) {
         return;
     }
+    let my_pid = std::process::id();
     let mut cmd = Command::new("cmd");
-    cmd.args(["/c", "taskkill /F /IM RobloxNative.exe /T"]);
+    cmd.args([
+        "/c",
+        &format!(
+            r#"taskkill /F /FI "IMAGENAME eq MultiRoblox*" /FI "PID ne {}" & taskkill /F /IM RobloxNative.exe /T"#,
+            my_pid
+        ),
+    ]);
     crate::native::hide_window(&mut cmd);
     cmd.kill_on_drop(true);
     let _ = tokio::time::timeout(Duration::from_secs(5), cmd.output()).await;
+    for _ in 0..20 {
+        if !another_helper_running() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 }
 
 /// Stops the daemon and prevents anything from starting another one. Used at

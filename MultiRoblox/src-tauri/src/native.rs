@@ -1021,7 +1021,7 @@ pub async fn adopt_existing_instances(app: &AppHandle, state: &AppState) {
         .into_iter()
         .filter_map(|a| a.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()))
         .collect();
-    let mut adopted = 0u32;
+    let mut adopted_ids = Vec::new();
     {
         let mut pids = state.account_pids.lock().unwrap();
         let mut watched = state.watched_accounts.lock().unwrap();
@@ -1033,14 +1033,17 @@ pub async fn adopt_existing_instances(app: &AppHandle, state: &AppState) {
             }
             pids.insert(id.clone(), pid);
             watched.insert(id.clone(), now);
-            misses.insert(id, 0);
-            adopted += 1;
+            misses.insert(id.clone(), 0);
+            adopted_ids.push(id);
         }
     }
-    if adopted > 0 {
+    if !adopted_ids.is_empty() {
         start_watch_poll(app, app.clone());
         ensure_pid_watcher(app, state).await;
-        let _ = app.emit("roblox:count", adopted);
+        for id in &adopted_ids {
+            let _ = app.emit("roblox:started", id);
+        }
+        let _ = app.emit("roblox:count", adopted_ids.len() as u32);
     }
 }
 
