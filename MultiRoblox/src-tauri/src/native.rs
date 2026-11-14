@@ -1013,7 +1013,8 @@ pub async fn watch_roblox(app: &AppHandle, account_id: &str) {
 /// `instance-labels.json` and present in `accounts.json`), so the `(N running)`
 /// badge, green card dots, and watcher loop work across app restarts.
 pub async fn adopt_existing_instances(app: &AppHandle, state: &AppState) {
-    let alive = crate::instance_labels::alive_instances();
+    let live_pids = native_pids(app, state).await.unwrap_or_default();
+    let alive = crate::instance_labels::alive_instances(&live_pids);
     if alive.is_empty() {
         return;
     }
@@ -1073,37 +1074,96 @@ async fn watch_tick(app: &AppHandle) {
 
     let now = now_ms();
     let mut closed: Vec<String> = Vec::new();
-    let watched_snapshot: Vec<(String, i64)> = state
+    let mut watched_snapshot: Vec<(String, i64)> = state
         .watched_accounts
         .lock()
         .unwrap()
         .iter()
         .map(|(k, v)| (k.clone(), *v))
         .collect();
+
+    // When RobloxPlayerBeta.exe hands off to RobloxPlayerInstaller.exe
+    // (-isInstallerLaunch) during startup or channel switch, the initial stub
+    // PID exits and a replacement RobloxPlayerBeta.exe PID appears a few
+    // seconds later. Re-adopt that replacement PID immediately (even inside the
+    // launch grace window) so account_pids and instance-labels.json stay
+    // pointed at the live client.
+    {
+        const HANDOFF_WINDOW_100NS: u64 = 1_200_000_000; // 120s in FILETIME 100ns units
+        let mut claimed_pids: std::collections::HashSet<u32> = state
+            .account_pids
+            .lock()
+            .unwrap()
+            .values()
+            .copied()
+            .filter(|p| alive_pids.contains(p))
+            .collect();
+
+        for (account_id, ready_at) in &mut watched_snapshot {
+            let tracked_pid = state.account_pids.lock().unwrap().get(account_id).copied();
+            if tracked_pid.is_some_and(|p| alive_pids.contains(&p)) {
+                continue;
+            }
+            let base_created = tracked_pid
+                .and_then(crate::instance_labels::process_created)
+                .or_else(|| crate::instance_labels::recorded_created(account_id))
+                .unwrap_or(0);
+            if base_created == 0 {
+                continue;
+            }
+            let mut best: Option<(u32, u64)> = None;
+            for &cand_pid in &alive_pids {
+                if claimed_pids.contains(&cand_pid) {
+                    continue;
+                }
+                let Some(cand_created) = crate::instance_labels::process_created(cand_pid) else {
+                    continue;
+                };
+                if cand_created >= base_created
+                    && cand_created.saturating_sub(base_created) <= HANDOFF_WINDOW_100NS
+                    && best.map(|(_, b)| cand_created < b).unwrap_or(true)
+                {
+                    best = Some((cand_pid, cand_created));
+                }
+            }
+            if let Some((new_pid, _)) = best {
+                claimed_pids.insert(new_pid);
+                state
+                    .account_pids
+                    .lock()
+                    .unwrap()
+                    .insert(account_id.clone(), new_pid);
+                state.miss_counts.lock().unwrap().insert(account_id.clone(), 0);
+                *ready_at = (*ready_at).max(now + 10_000);
+                state
+                    .watched_accounts
+                    .lock()
+                    .unwrap()
+                    .insert(account_id.clone(), *ready_at);
+                crate::instance_labels::remember(account_id, new_pid);
+                crate::window_positions::launched(&state, new_pid);
+            }
+        }
+    }
+
     for (account_id, ready_at) in watched_snapshot {
         if now < ready_at {
             continue;
         }
-        // An account is running iff the exact process this app spawned for it
-        // is still alive. watch_roblox() is only ever called from do_launch
-        // after account_pids.insert, so a watched account always has a PID and
-        // there is nothing to guess at.
-        //
-        // This used to fall back to "is any Roblox alive at all" and to adopt
-        // an unclaimed PID when the tracked one died, both to cover accounts
-        // launched through the roblox-player: URI handler, where the spawned
-        // process could not be identified. That fallback is gone (it was what
-        // triggered Roblox's own installer), and with it the only case those
-        // branches legitimately served. What they still did was misattribute a
-        // Roblox the user started themselves: once a tracked instance exited,
-        // the next tick handed that unrelated process to the account, so the
-        // app reported it as running and, worse, would taskkill someone's own
-        // Roblox on Kill Roblox, which is explicitly not ours to touch.
         let running = match state.account_pids.lock().unwrap().get(&account_id) {
             Some(p) => alive_pids.contains(p),
             None => false,
         };
         if !running {
+            if is_roblox_installer_running().await {
+                state
+                    .watched_accounts
+                    .lock()
+                    .unwrap()
+                    .insert(account_id.clone(), now + 10_000);
+                state.miss_counts.lock().unwrap().insert(account_id, 0);
+                continue;
+            }
             let misses = {
                 let mut mc = state.miss_counts.lock().unwrap();
                 let m = mc.entry(account_id.clone()).or_insert(0);
@@ -1474,22 +1534,24 @@ pub async fn do_launch(
     }
 
     // Run CSRF fetch and version check concurrently — both need network,
-    // neither depends on the other. On the common path (CSRF cached, no
-    // lockChannel) both return instantly and the join costs nothing.
+    // neither depends on the other. Always resolve the current live version
+    // (unless pinned to a custom hash) so spawn_roblox_direct prefers the
+    // live build folder over an older folder with a newer mtime.
+    let version_query = if lock_channel {
+        version_pin.as_str()
+    } else {
+        "current"
+    };
     let (csrf_result, live_version) = tokio::join!(
         crate::roblox_api::get_csrf_token(state, cookie),
         async {
-            if lock_channel {
-                tokio::time::timeout(
-                    Duration::from_secs(5),
-                    crate::roblox_api::get_roblox_version(state, Some(version_pin.as_str())),
-                )
-                .await
-                .ok()
-                .and_then(|r| r.ok())
-            } else {
-                None
-            }
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                crate::roblox_api::get_roblox_version(state, Some(version_query)),
+            )
+            .await
+            .ok()
+            .and_then(|r| r.ok())
         }
     );
 
@@ -1724,7 +1786,7 @@ pub async fn do_launch(
             {
                 let app_xml = app.clone();
                 tokio::spawn(async move {
-                    tokio::time::sleep(Duration::from_secs(6)).await;
+                    tokio::time::sleep(Duration::from_secs(12)).await;
                     let st = app_xml.state::<AppState>();
                     let _guard = st.launch_lock.lock().await;
                     crate::commands::restore_launch_xml_if_gen(xml_gen);

@@ -108,7 +108,30 @@ pub async fn get_roblox_version(state: &AppState, channel: Option<&str>) -> Resu
         return Ok(h);
     }
     // Only the live build is tracked now; Custom is handled above.
+    // Query Roblox's official client-version CDN first (same endpoint the
+    // Roblox bootstrapper checks), falling back to WEAO if unreachable.
     let _ = sel;
+    if let Ok(res) = state
+        .http
+        .get("https://clientsettingscdn.roblox.com/v2/client-version/WindowsPlayer")
+        .header("User-Agent", UA)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+    {
+        if res.status() == 200 {
+            if let Ok(json) = res.json::<Value>().await {
+                if let Some(v) = json
+                    .get("clientVersionUpload")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                {
+                    return Ok(v.to_string());
+                }
+            }
+        }
+    }
+
     let url = "https://weao.xyz/api/versions/current".to_string();
     let res = state
         .http

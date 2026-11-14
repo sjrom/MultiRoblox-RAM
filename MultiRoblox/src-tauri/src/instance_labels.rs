@@ -55,27 +55,64 @@ pub fn account_for_pid(pid: u32) -> Option<String> {
     matching_account(&instances, pid, process_created(pid)?)
 }
 
+pub fn recorded_created(id: &str) -> Option<u64> {
+    let path = crate::paths::app_data_dir().join("instance-labels.json");
+    load(&path)?.get(id).map(|inst| inst.created)
+}
+
 /// Returns all `(account_id, pid)` pairs from `instance-labels.json` whose
-/// OS process is still alive with the exact same creation timestamp.
-pub fn alive_instances() -> Vec<(String, u32)> {
+/// OS process is still alive (either exact PID + creation timestamp, or a
+/// replacement `RobloxPlayerBeta.exe` spawned shortly after the initial stub).
+pub fn alive_instances(live_roblox_pids: &std::collections::HashSet<u32>) -> Vec<(String, u32)> {
     let path = crate::paths::app_data_dir().join("instance-labels.json");
     let Some(instances) = load(&path) else {
         return Vec::new();
     };
-    instances
-        .into_iter()
-        .filter_map(|(id, inst)| {
-            if process_created(inst.pid) == Some(inst.created) {
-                Some((id, inst.pid))
-            } else {
-                None
+    let mut result = Vec::new();
+    let mut claimed_pids = std::collections::HashSet::new();
+    let mut unmatched = Vec::new();
+
+    for (id, inst) in instances {
+        if process_created(inst.pid) == Some(inst.created) {
+            claimed_pids.insert(inst.pid);
+            result.push((id, inst.pid));
+        } else {
+            unmatched.push((id, inst));
+        }
+    }
+
+    // 120 seconds in 100-ns FILETIME intervals. Covers RobloxPlayerBeta ->
+    // RobloxPlayerInstaller -> RobloxPlayerBeta (-isInstallerLaunch) handoff.
+    const HANDOFF_WINDOW_100NS: u64 = 1_200_000_000;
+    unmatched.sort_by_key(|(_, inst)| inst.created);
+    for (id, inst) in unmatched {
+        let mut best: Option<(u32, u64)> = None;
+        for &cand_pid in live_roblox_pids {
+            if claimed_pids.contains(&cand_pid) {
+                continue;
             }
-        })
-        .collect()
+            let Some(cand_created) = process_created(cand_pid) else {
+                continue;
+            };
+            if cand_created >= inst.created
+                && cand_created.saturating_sub(inst.created) <= HANDOFF_WINDOW_100NS
+                && best.map(|(_, b)| cand_created < b).unwrap_or(true)
+            {
+                best = Some((cand_pid, cand_created));
+            }
+        }
+        if let Some((new_pid, _)) = best {
+            claimed_pids.insert(new_pid);
+            remember(&id, new_pid);
+            result.push((id, new_pid));
+        }
+    }
+
+    result
 }
 
 #[cfg(windows)]
-fn process_created(pid: u32) -> Option<u64> {
+pub fn process_created(pid: u32) -> Option<u64> {
     use windows::Win32::Foundation::{CloseHandle, FILETIME};
     use windows::Win32::System::Threading::{
         GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
@@ -94,7 +131,7 @@ fn process_created(pid: u32) -> Option<u64> {
 }
 
 #[cfg(not(windows))]
-fn process_created(_: u32) -> Option<u64> {
+pub fn process_created(_: u32) -> Option<u64> {
     None
 }
 
