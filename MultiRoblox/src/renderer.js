@@ -112,7 +112,9 @@ function showEncModal(mode) {
     if (skip) skip.style.display = 'none';
   }
   openModal('m-enc');
-  setTimeout(() => inp && inp.focus(), 60);
+  setTimeout(() => {
+    if (inp && !document.getElementById('m-update')?.classList.contains('open')) inp.focus();
+  }, 60);
 }
 function _encErr(m) { const e = document.getElementById('enc-err'); if (e) { e.textContent = m; e.style.display = 'block'; } }
 async function submitEnc() {
@@ -170,6 +172,11 @@ function clearAppData() {
 }
 
 async function init() {
+  showAppVersion();
+  const updatePromise = checkUpdates();
+  // Check for a newer MultiRoblox release before asking for the encryption key,
+  // so users don't type their password only to see an update prompt right after.
+  await Promise.race([updatePromise, new Promise(r => setTimeout(r, 1500))]);
   // Encryption gate: in passphrase mode the cookies can't be read until the key is
   // entered for this boot session. Show the popup first; only load data once ready.
   try {
@@ -207,7 +214,6 @@ async function continueInit() {
   refreshMultiStatus();
   positionNavSlider(); // covers landing on the default page without a goTo() call
   detectRobloxVersion();
-  showAppVersion();
   if (!settings.defenderNoticeShown) {
     settings.defenderNoticeShown = true;
     api.saveSettings(settings);
@@ -220,7 +226,6 @@ async function continueInit() {
     }
   });
   checkRuntimeEnv();
-  checkUpdates();
   startStatusPoll();
   if (settings.autoTrim) startAutoTrimLoop();
   startTrackingLoop();
@@ -2075,7 +2080,12 @@ async function saveKeySettings() {
 }
 
 function openModal(id) { document.getElementById(id).classList.add('open'); }
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+  if (id === 'm-update' && document.getElementById('m-enc')?.classList.contains('open')) {
+    setTimeout(() => document.getElementById('enc-input')?.focus(), 50);
+  }
+}
 function setStatus(id, type, html) { const el = document.getElementById(id); el.className = 'mst ' + type; el.innerHTML = html; }
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function toast(msg, type) {
@@ -2101,6 +2111,8 @@ async function showUpdateToast(version, url) {
       closeModal('m-update');
     };
   }
+  const modalEl = document.getElementById('m-update');
+  if (modalEl) document.body.appendChild(modalEl);
   openModal('m-update');
 }
 
