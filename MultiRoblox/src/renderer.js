@@ -251,10 +251,7 @@ async function continueInit() {
     _launchedIds.delete(id);
     const closedAcct = accounts.find(a => a.id === id);
     logEntry('info', 'close', `Roblox closed for ${closedAcct ? closedAcct.username : id}`, { accountId: id, username: closedAcct?.username || null, userId: closedAcct?.userId || null });
-    const card = document.querySelector(`.card[data-id="${id}"]`);
-    if (card) card.classList.remove('is-live');
-    const dot = document.querySelector(`.card[data-id="${id}"] .card-dot`);
-    if (dot) { dot.classList.remove('launched'); dot.title = 'Not launched'; }
+    setCardLiveState(document.querySelector(`.card[data-id="${id}"]`), false);
     refreshPkgAvatarStatus();
     pollRunningCount();
   });
@@ -262,8 +259,7 @@ async function continueInit() {
   api.onAllRobloxClosed(() => {
     logEntry('warn', 'close', 'All Roblox instances closed');
     _launchedIds.clear();
-    document.querySelectorAll('.card.is-live').forEach(c => c.classList.remove('is-live'));
-    document.querySelectorAll('.card-dot.launched').forEach(d => { d.classList.remove('launched'); d.title = 'Not launched'; });
+    document.querySelectorAll('.card.is-live').forEach(c => setCardLiveState(c, false));
     refreshPkgAvatarStatus();
     pollRunningCount();
     if (document.getElementById('page-mixer')?.classList.contains('active')) mixRefreshRunning();
@@ -770,24 +766,57 @@ function goTo(p) {
   refreshAllSliderFills();
 }
 
+function setCardLiveState(card, shouldBeLive) {
+  if (!card) return;
+  card.classList.toggle('is-live', shouldBeLive);
+  const dot = card.querySelector('.card-dot');
+  if (dot) {
+    dot.classList.toggle('launched', shouldBeLive);
+    dot.title = shouldBeLive ? 'Launched' : 'Not launched';
+  }
+  const btn = card.querySelector('.btn-launch');
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = shouldBeLive ? 'Stop' : 'Start';
+  }
+}
+
 function markLaunched(id) {
   _launchedIds.add(id);
-  const card = document.querySelector(`.card[data-id="${id}"]`);
-  if (card) {
-    card.classList.add('is-live');
-    const dot = card.querySelector('.card-dot');
-    if (dot) { dot.classList.add('launched'); dot.title = 'Launched'; }
-
-  }
+  setCardLiveState(document.querySelector(`.card[data-id="${id}"]`), true);
   refreshPkgAvatarStatus();
+}
+
+async function onCardPrimaryAction(id) {
+  if (!_launchedIds.has(id)) {
+    openLaunch(id);
+    return;
+  }
+  const card = document.querySelector(`.card[data-id="${id}"]`);
+  const btn = card ? card.querySelector('.btn-launch') : null;
+  if (btn && btn.disabled) return;
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spin"></div>Stopping';
+  }
+  const res = await killOne(id);
+  if (res && res.ok) {
+    const a = accounts.find(x => x.id === id);
+    toast('Stopped ' + (a ? (a.nickname || a.username || id) : id), 'ok');
+  }
 }
 
 async function killOne(id) {
   const a = accounts.find(x => x.id === id);
   logEntry('warn', 'kill', `Killing Roblox instance for ${a ? a.username : id}...`, { accountId: id, username: a?.username, userId: a?.userId });
   const res = await api.killOneRoblox(id);
+  _launchedIds.delete(id);
+  setCardLiveState(document.querySelector(`.card[data-id="${id}"]`), false);
+  refreshPkgAvatarStatus();
+  pollRunningCount();
   if (!res || !res.ok) toast(res?.error || 'Could not kill that instance', 'err');
   else logEntry('ok', 'kill', `Killed instance for ${a ? a.username : id}`, { accountId: id });
+  return res;
 }
 
 // ── Card context menu ─────────────────────────────────────────────────────
@@ -937,6 +966,8 @@ function refreshPkgAvatarStatus() {
   });
 }
 
+const GFX_LABELS = { auto: 'Auto', low: 'Low', medium: 'Med', high: 'High' };
+
 function render() {
   const grid = document.getElementById('grid'), empty = document.getElementById('empty'), sub = document.getElementById('acct-sub');
   sub.textContent = accounts.length ? accounts.length + ' account' + (accounts.length !== 1 ? 's' : '') + ' saved' : 'No accounts saved';
@@ -962,12 +993,12 @@ function render() {
           <div class="card-name">${esc(a.nickname || a.username || 'Unknown')}</div>
           <span class="card-expired" title="This account's cookie is no longer valid. Re-add the account to refresh it."><span class="material-icons-round">error_outline</span>Expired</span>
         </div>
-        <div class="card-uid">${a.userId ? 'ID ' + a.userId : 'No ID'} · ${(a.fpsCap === 15 || a.fpsCap === 30) ? a.fpsCap : 60} FPS</div>
+        <div class="card-uid">${a.userId ? 'ID ' + a.userId : 'No ID'} · ${(a.fpsCap === 15 || a.fpsCap === 30) ? a.fpsCap : 60} FPS · ${GFX_LABELS[a.gfxQuality] || 'Auto'} GFX</div>
       </div>
       <div class="card-game ${a.gameTarget ? 'visible' : ''}" id="gt-${a.id}" title="${esc(a.gameTarget || '')}">${a.gameTarget ? esc(truncate(_gameNameCache[a.id] || extractTargetLabel(a.gameTarget), 22)) : ''}</div>
       <div class="card-row">
-        <button class="btn btn-launch" onclick="openLaunch('${a.id}')">
-          Start
+        <button class="btn btn-launch" onclick="onCardPrimaryAction('${a.id}')">
+          ${_launchedIds.has(a.id) ? 'Stop' : 'Start'}
         </button>
         <button class="btn btn-edit" onclick="openEdit('${a.id}')" aria-label="Edit account">
           <span class="material-icons-round">edit</span>
@@ -1506,7 +1537,7 @@ function cancelLogin() {
 
 async function finishLogin(res) {
   setStatus('login-status', 'ok', '<span class="material-icons-round">check_circle</span>Signed in as ' + esc(res.username));
-  const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: res.cookie, gameTarget: '', fpsCap: 60 });
+  const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: res.cookie, gameTarget: '', fpsCap: 60, gfxQuality: 'auto' });
   accounts.push(a); render();
   setTimeout(() => {
     closeModal('m-login');
@@ -1517,10 +1548,18 @@ async function finishLogin(res) {
 }
 
 let _editFps = 60;
+let _editGfx = 'auto';
 function selectEditFps(fps) {
   _editFps = (fps === 15 || fps === 30) ? fps : 60;
   document.querySelectorAll('#edit-fps-seg .fps-seg-btn').forEach(btn => {
     btn.classList.toggle('active', parseInt(btn.dataset.fps, 10) === _editFps);
+  });
+}
+
+function selectEditGfx(gfx) {
+  _editGfx = (gfx === 'low' || gfx === 'medium' || gfx === 'high') ? gfx : 'auto';
+  document.querySelectorAll('#edit-gfx-seg .fps-seg-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.gfx === _editGfx);
   });
 }
 
@@ -1541,6 +1580,7 @@ function openEdit(id) {
   document.getElementById('in-description').value = editAcc.description || '';
   document.getElementById('in-target').value = editAcc.gameTarget || '';
   selectEditFps(editAcc.fpsCap);
+  selectEditGfx(editAcc.gfxQuality);
   // Reset follow field/status; it's a lookup tool, not a saved value.
   document.getElementById('in-follow').value = '';
   followSetStatus("Finds the server they're in and fills the target above.", '');
@@ -1586,7 +1626,7 @@ async function saveEdit() {
   const target = document.getElementById('in-target').value.trim();
   const nickname = document.getElementById('in-nickname').value.trim();
   const description = document.getElementById('in-description').value.trim();
-  const updated = await api.updateAccount(editAcc.id, { gameTarget: target, nickname, description, fpsCap: _editFps });
+  const updated = await api.updateAccount(editAcc.id, { gameTarget: target, nickname, description, fpsCap: _editFps, gfxQuality: _editGfx });
   if (updated) {
     const idx = accounts.findIndex(a => a.id === editAcc.id);
     if (idx !== -1) {
@@ -1982,6 +2022,8 @@ async function killPackage(id) {
     const chip = document.getElementById('pkg-chip-' + id + '-' + m.id);
     if (res && res.ok) {
       okCount++;
+      _launchedIds.delete(m.id);
+      setCardLiveState(document.querySelector(`.card[data-id="${m.id}"]`), false);
       logEntry('ok', 'kill', `Killed instance for ${m.username || m.id} (package)`, { accountId: m.id });
       if (chip) { chip.className = 'pkg-chip ok'; chip.innerHTML = '<span class="material-icons-round">check_circle</span>' + esc(m.nickname || m.username || ''); }
     } else if (chip) {
@@ -2586,6 +2628,10 @@ function clampInt(v, min, max, dflt) {
 }
 
 function setRunningBadges(n) {
+  if (n === 0 && _windowsHidden) {
+    _windowsHidden = false;
+    updateHideButtonUI();
+  }
   const txt = n + ' running';
   const tb = document.getElementById('tb-running');
   if (tb) {
@@ -2623,12 +2669,7 @@ async function pollWatchedIds() {
     const shouldBeLive = watched.has(id);
     const isLive = card.classList.contains('is-live');
     if (shouldBeLive !== isLive) {
-      card.classList.toggle('is-live', shouldBeLive);
-      const dot = card.querySelector('.card-dot');
-      if (dot) {
-        dot.classList.toggle('launched', shouldBeLive);
-        dot.title = shouldBeLive ? 'Launched' : 'Not launched';
-      }
+      setCardLiveState(card, shouldBeLive);
       if (shouldBeLive) _launchedIds.add(id); else _launchedIds.delete(id);
       if (dropFromFilter && dropFromFilter(id)) card.remove();
     }
@@ -2894,6 +2935,46 @@ function mixVolCommit() {
   }, 60);
 }
 
+let _windowsHidden = false;
+function updateHideButtonUI() {
+  const btn = document.getElementById('nav-hide');
+  const icon = document.getElementById('nav-hide-icon');
+  const label = document.getElementById('nav-hide-label');
+  if (btn) btn.classList.toggle('active', _windowsHidden);
+  if (icon) icon.textContent = _windowsHidden ? 'visibility' : 'visibility_off';
+  if (label) label.textContent = _windowsHidden ? 'Show Roblox' : 'Hide Roblox';
+}
+
+async function toggleHideRobloxWindows() {
+  const btn = document.getElementById('nav-hide');
+  if (btn && btn.disabled) return;
+  if (btn) btn.disabled = true;
+  const wantHide = !_windowsHidden;
+  try {
+    const res = await api.setRobloxWindowsHidden(wantHide);
+    if (res && res.ok) {
+      const n = res.count || 0;
+      if (wantHide && n === 0) {
+        _windowsHidden = false;
+        updateHideButtonUI();
+        toast('No controlled Roblox windows to hide', 'err');
+      } else {
+        _windowsHidden = wantHide;
+        updateHideButtonUI();
+        toast(wantHide
+          ? `Hidden ${n} controlled instance${n === 1 ? '' : 's'}`
+          : `Restored ${n} instance${n === 1 ? '' : 's'}`, 'ok');
+      }
+    } else {
+      toast((wantHide ? 'Hide' : 'Show') + ' failed' + (res && res.error ? ': ' + res.error : ''), 'err');
+    }
+  } catch (e) {
+    toast((wantHide ? 'Hide' : 'Show') + ' failed: ' + (e.message || e), 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 // Kill all
 async function alignRobloxWindows() {
   const btn = document.getElementById('nav-align');
@@ -2902,6 +2983,10 @@ async function alignRobloxWindows() {
   try {
     const res = await api.alignRobloxWindows();
     if (res && res.ok) {
+      if (_windowsHidden) {
+        _windowsHidden = false;
+        updateHideButtonUI();
+      }
       const n = res.aligned || 0;
       toast(n ? `Aligned ${n} instance${n === 1 ? '' : 's'}` : 'No running Roblox instances', n ? 'ok' : 'err');
     } else {
@@ -2921,8 +3006,7 @@ async function mixKillAll() {
   const res = await api.killAllRoblox();
   // Reset all dots / launched state.
   _launchedIds.clear();
-  document.querySelectorAll('.card.is-live').forEach(c => c.classList.remove('is-live'));
-  document.querySelectorAll('.card-dot.launched').forEach(d => { d.classList.remove('launched'); d.title = 'Not launched'; });
+  document.querySelectorAll('.card.is-live').forEach(c => setCardLiveState(c, false));
   refreshPkgAvatarStatus();
   await mixRefreshRunning();
   btns.forEach(b => { b.disabled = false; });
@@ -3346,8 +3430,7 @@ let _trackingRunning = false;
 function startTrackingLoop() {
   if (_trackingTimer) clearInterval(_trackingTimer);
   _trackingTimer = null;
-  if (!getTrackingTimedIds().size || !getTrackingWebhookUrl()) return;
-  _trackingTimer = setInterval(captureTimedTracking, getTrackingIntervalSec() * 1000);
+  // Tracking is disabled; do not start timed webhook captures even if previously configured.
 }
 
 async function captureTimedTracking() {

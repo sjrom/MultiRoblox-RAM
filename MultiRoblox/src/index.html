@@ -56,13 +56,13 @@ window.DEFAULT_THEME = 'dark';
     <button class="nav-item" id="nav-charts" onclick="goTo('charts')">
       <span class="material-icons-round">bar_chart</span>Charts
     </button>
-    <button class="nav-item" id="nav-mixer" onclick="goTo('mixer')">
+    <button class="nav-item" id="nav-mixer" onclick="goTo('mixer')" style="display:none">
       <span class="material-icons-round">graphic_eq</span>Mixer
     </button>
-    <button class="nav-item" id="nav-generator" onclick="goTo('generator')">
+    <button class="nav-item" id="nav-generator" onclick="goTo('generator')" style="display:none">
       <span class="material-icons-round">shuffle</span>Generator
     </button>
-    <button class="nav-item" id="nav-tracking" onclick="goTo('tracking')">
+    <button class="nav-item" id="nav-tracking" onclick="goTo('tracking')" style="display:none">
       <span class="material-icons-round">track_changes</span>Tracking
     </button>
     <button class="nav-item" id="nav-settings" onclick="goTo('settings')">
@@ -72,6 +72,9 @@ window.DEFAULT_THEME = 'dark';
       <span class="material-icons-round">terminal</span>Logs
     </button>
     <div class="nav-spacer"></div>
+    <button class="btn btn-ghost" id="nav-hide" onclick="toggleHideRobloxWindows()">
+      <span class="material-icons-round" id="nav-hide-icon" style="font-size:15px">visibility_off</span><span id="nav-hide-label">Hide Roblox</span>
+    </button>
     <button class="btn btn-ghost" id="nav-align" onclick="alignRobloxWindows()">
       <span class="material-icons-round" style="font-size:15px">grid_view</span>Align Roblox
     </button>
@@ -836,7 +839,7 @@ window.DEFAULT_THEME = 'dark';
 </div>
 <!-- Edit modal -->
 <div class="overlay" id="m-edit" data-backdrop-close="false">
-  <div class="modal" onclick="event.stopPropagation()">
+  <div class="modal" onclick="event.stopPropagation()" style="max-height:92vh;overflow-y:auto">
     <button class="modal-x" onclick="closeModal('m-edit')" aria-label="Close">&times;</button>
     <div class="modal-title" id="edit-title">Edit account</div>
     <div class="modal-sub" style="margin-bottom:14px">Change what shows up on the account card.</div>
@@ -853,7 +856,7 @@ window.DEFAULT_THEME = 'dark';
     </div>
     <div class="field">
       <label for="in-description">Description</label>
-      <textarea id="in-description" placeholder="Personal note..."></textarea>
+      <textarea id="in-description" placeholder="Personal note..." style="min-height:56px"></textarea>
     </div>
     <div class="field">
       <label for="in-target">Game ID, Invite Link, or Private Server Link</label>
@@ -877,6 +880,16 @@ window.DEFAULT_THEME = 'dark';
         <button type="button" class="fps-seg-btn active" data-fps="60" onclick="selectEditFps(60)">60 FPS</button>
       </div>
       <div class="field-hint">Applies to this instance when launched (default: 60 FPS).</div>
+    </div>
+    <div class="field">
+      <label>Graphics Quality</label>
+      <div class="fps-seg" id="edit-gfx-seg">
+        <button type="button" class="fps-seg-btn active" data-gfx="auto" onclick="selectEditGfx('auto')">Auto</button>
+        <button type="button" class="fps-seg-btn" data-gfx="low" onclick="selectEditGfx('low')">Low</button>
+        <button type="button" class="fps-seg-btn" data-gfx="medium" onclick="selectEditGfx('medium')">Medium</button>
+        <button type="button" class="fps-seg-btn" data-gfx="high" onclick="selectEditGfx('high')">High</button>
+      </div>
+      <div class="field-hint">Applies to this instance when launched (default: Auto).</div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('m-edit')">Cancel</button>
@@ -945,11 +958,11 @@ window.DEFAULT_THEME = 'dark';
         <span class="material-icons-round" style="font-size:16px;color:var(--ac);margin-top:1px;flex-shrink:0">more_horiz</span>
         <div><div style="font-size:12.5px;font-weight:600;color:var(--t1);margin-bottom:2px">Right-click a card</div><div style="font-size:12px;color:var(--t2)">Kill the instance, copy the user ID/username/cookie, or open the account logged in in a real browser.</div></div>
       </div>
-      <div style="display:flex;gap:12px;align-items:flex-start">
+      <div style="display:none;gap:12px;align-items:flex-start">
         <span class="material-icons-round" style="font-size:16px;color:var(--ac);margin-top:1px;flex-shrink:0">tune</span>
         <div><div style="font-size:12.5px;font-weight:600;color:var(--t1);margin-bottom:2px">Mixer</div><div style="font-size:12px;color:var(--t2)">Set graphics quality and volume for every instance. Applies on next launch.</div></div>
       </div>
-      <div style="display:flex;gap:12px;align-items:flex-start">
+      <div style="display:none;gap:12px;align-items:flex-start">
         <span class="material-icons-round" style="font-size:16px;color:var(--ac);margin-top:1px;flex-shrink:0">shuffle</span>
         <div><div style="font-size:12.5px;font-weight:600;color:var(--t1);margin-bottom:2px">Generator</div><div style="font-size:12px;color:var(--t2)">Paste a BloxGen (<code style="font-family:'JetBrains Mono',monospace;font-size:10.5px;background:var(--s3);padding:1px 5px;border-radius:4px">BLOX-</code>) or Altgen (<code style="font-family:'JetBrains Mono',monospace;font-size:10.5px;background:var(--s3);padding:1px 5px;border-radius:4px">MG_</code>) API key and click Generate to create an alt account.</div></div>
       </div>

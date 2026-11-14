@@ -628,6 +628,7 @@ internal static class AntiAfk
     [DllImport("user32.dll")] static extern bool SetLayeredWindowAttributes(IntPtr hWnd, uint crKey, byte bAlpha, uint dwFlags);
     [StructLayout(LayoutKind.Sequential)]
     struct RECT { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")] static extern bool IsWindow(IntPtr hWnd);
     [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr hWnd);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
     [DllImport("user32.dll")] static extern int GetSystemMetrics(int nIndex);
@@ -637,7 +638,7 @@ internal static class AntiAfk
 
     delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
-    const int SW_RESTORE = 9, SW_MINIMIZE = 6;
+    const int SW_HIDE = 0, SW_MINIMIZE = 6, SW_SHOWMINNOACTIVE = 7, SW_RESTORE = 9;
     const uint KEYEVENTF_KEYUP = 0x0002;
     const int GWL_EXSTYLE = -20;
     const int WS_EX_LAYERED = 0x00080000;
@@ -646,6 +647,119 @@ internal static class AntiAfk
     const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
     const uint SPI_GETWORKAREA = 0x0030;
     const uint SWP_NOSIZE = 0x0001, SWP_NOMOVE = 0x0002, SWP_NOZORDER = 0x0004, SWP_NOACTIVATE = 0x0010, SWP_FRAMECHANGED = 0x0020, SWP_SHOWWINDOW = 0x0040, SWP_NOSENDCHANGING = 0x0400;
+
+    static readonly object _hiddenLock = new object();
+    static readonly System.Collections.Generic.Dictionary<uint, IntPtr> _hiddenWindows = new System.Collections.Generic.Dictionary<uint, IntPtr>();
+
+    static System.Collections.Generic.HashSet<uint> ParsePidSet(string pidCsv)
+    {
+        var set = new System.Collections.Generic.HashSet<uint>();
+        if (string.IsNullOrWhiteSpace(pidCsv)) return set;
+        foreach (var tok in pidCsv.Split(','))
+        {
+            uint pid;
+            if (uint.TryParse(tok.Trim(), out pid) && pid > 0) set.Add(pid);
+        }
+        return set;
+    }
+
+    static bool IsHiddenWindow(IntPtr hWnd)
+    {
+        if (hWnd == IntPtr.Zero) return false;
+        lock (_hiddenLock)
+        {
+            foreach (var w in _hiddenWindows.Values)
+            {
+                if (w == hWnd) return true;
+            }
+        }
+        return false;
+    }
+
+    public static int HideWindows(string pidCsv)
+    {
+        var targetPids = ParsePidSet(pidCsv);
+        if (targetPids.Count == 0) return 0;
+        var map = EnumRobloxWindows();
+        int count = 0;
+        foreach (var kv in map)
+        {
+            if (!targetPids.Contains(kv.Key)) continue;
+            IntPtr hWnd = kv.Value;
+            if (hWnd == IntPtr.Zero || !IsWindow(hWnd)) continue;
+            try
+            {
+                if (IsWindowVisible(hWnd))
+                {
+                    if (!IsIconic(hWnd))
+                    {
+                        ShowWindow(hWnd, SW_SHOWMINNOACTIVE);
+                        Thread.Sleep(40);
+                    }
+                    ShowWindow(hWnd, SW_HIDE);
+                }
+                lock (_hiddenLock) { _hiddenWindows[kv.Key] = hWnd; }
+                count++;
+            }
+            catch { }
+        }
+        return count;
+    }
+
+    public static int ShowWindows(string pidCsv, bool restoreToScreen)
+    {
+        var targetPids = ParsePidSet(pidCsv);
+        var toShow = new System.Collections.Generic.Dictionary<uint, IntPtr>();
+        lock (_hiddenLock)
+        {
+            var remove = new System.Collections.Generic.List<uint>();
+            foreach (var kv in _hiddenWindows)
+            {
+                if (targetPids.Count == 0 || targetPids.Contains(kv.Key))
+                {
+                    toShow[kv.Key] = kv.Value;
+                    remove.Add(kv.Key);
+                }
+            }
+            foreach (var pid in remove) _hiddenWindows.Remove(pid);
+        }
+
+        var robloxPids = new System.Collections.Generic.HashSet<uint>();
+        foreach (var p in Process.GetProcessesByName("RobloxPlayerBeta"))
+        {
+            try { robloxPids.Add((uint)p.Id); } catch { }
+        }
+        if (robloxPids.Count > 0)
+        {
+            EnumWindows((hWnd, lp) =>
+            {
+                if (IsWindowVisible(hWnd)) return true;
+                if (!IsIconic(hWnd)) return true;
+                if (GetWindowTextLength(hWnd) == 0) return true;
+                uint pid; GetWindowThreadProcessId(hWnd, out pid);
+                if (!robloxPids.Contains(pid)) return true;
+                if (targetPids.Count > 0 && !targetPids.Contains(pid)) return true;
+                if (!toShow.ContainsKey(pid)) toShow[pid] = hWnd;
+                return true;
+            }, IntPtr.Zero);
+        }
+
+        int count = 0;
+        foreach (var kv in toShow)
+        {
+            IntPtr hWnd = kv.Value;
+            if (hWnd == IntPtr.Zero || !IsWindow(hWnd)) continue;
+            try
+            {
+                EnsureOpaque(hWnd);
+                ShowWindow(hWnd, restoreToScreen ? SW_RESTORE : SW_SHOWMINNOACTIVE);
+                Thread.Sleep(25);
+                count++;
+            }
+            catch { }
+        }
+        return count;
+    }
 
     static uint ThreadOf(IntPtr hWnd)
     {
@@ -670,7 +784,7 @@ internal static class AntiAfk
         catch { }
     }
 
-    // pid -> main visible window, for every running Roblox client.
+    // pid -> main window (visible or hidden by us), for every running Roblox client.
     static System.Collections.Generic.Dictionary<uint, IntPtr> EnumRobloxWindows()
     {
         var robloxPids = new System.Collections.Generic.HashSet<uint>();
@@ -679,7 +793,11 @@ internal static class AntiAfk
             try { robloxPids.Add((uint)p.Id); } catch { }
         }
         var map = new System.Collections.Generic.Dictionary<uint, IntPtr>();
-        if (robloxPids.Count == 0) return map;
+        if (robloxPids.Count == 0)
+        {
+            lock (_hiddenLock) { _hiddenWindows.Clear(); }
+            return map;
+        }
         EnumWindows((hWnd, lp) =>
         {
             if (!IsWindowVisible(hWnd)) return true;
@@ -688,6 +806,20 @@ internal static class AntiAfk
             if (robloxPids.Contains(pid) && !map.ContainsKey(pid)) map[pid] = hWnd;
             return true;
         }, IntPtr.Zero);
+        lock (_hiddenLock)
+        {
+            var dead = new System.Collections.Generic.List<uint>();
+            foreach (var kv in _hiddenWindows)
+            {
+                if (!robloxPids.Contains(kv.Key) || !IsWindow(kv.Value))
+                {
+                    dead.Add(kv.Key);
+                    continue;
+                }
+                if (!map.ContainsKey(kv.Key)) map[kv.Key] = kv.Value;
+            }
+            foreach (var pid in dead) _hiddenWindows.Remove(pid);
+        }
         return map;
     }
 
@@ -705,13 +837,14 @@ internal static class AntiAfk
     }
 
     // Focus one window and send a single benign key tap.
-    // Only minimised windows are made transparent (alpha=0) during restore/tap/minimise
+    // Minimised and hidden windows are made transparent (alpha=0) during restore/tap/minimise
     // so open/foreground windows on screen can never vanish or get buried in Z-order.
     // Safely compressed to ~85ms total tap duration: 45ms hold guarantees span across
     // 15 FPS (66.7ms/frame) and 30/60/120 FPS while reducing foreground lock latency by ~45%.
     static bool TapWindow(IntPtr hWnd, byte bVk, byte bScan, IntPtr originalFg)
     {
-        bool wasMinimised = IsIconic(hWnd);
+        bool wasHidden = !IsWindowVisible(hWnd) || IsHiddenWindow(hWnd);
+        bool wasMinimised = IsIconic(hWnd) || wasHidden;
         bool hideVisual = wasMinimised;
         int origExStyle = 0;
         int one = 1, zero = 0;
@@ -736,7 +869,13 @@ internal static class AntiAfk
         catch { return false; }
         finally
         {
-            if (wasMinimised)
+            if (wasHidden)
+            {
+                ShowWindow(hWnd, SW_SHOWMINNOACTIVE);
+                Thread.Sleep(25);
+                ShowWindow(hWnd, SW_HIDE);
+            }
+            else if (wasMinimised)
             {
                 ShowWindow(hWnd, SW_MINIMIZE);
                 Thread.Sleep(25);
@@ -748,6 +887,7 @@ internal static class AntiAfk
                 SetWindowLong(hWnd, GWL_EXSTYLE, origExStyle & ~WS_EX_LAYERED);
                 SetWindowPos(hWnd, IntPtr.Zero, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
                 try { DwmSetWindowAttribute(hWnd, DWMWA_TRANSITIONS_FORCEDISABLED, ref zero, sizeof(int)); } catch { }
+                if (wasHidden) ShowWindow(hWnd, SW_HIDE);
             }
         }
     }
@@ -898,6 +1038,7 @@ internal static class AntiAfk
 
     public static int AlignWindows(string pidCsv)
     {
+        ShowWindows("", true);
         var map = EnumRobloxWindows();
         if (map.Count == 0) return 0;
 
@@ -1174,6 +1315,7 @@ internal static class Daemon
         // there is never an orphaned helper holding Roblox's mutex.
         StopWatch();
         StopAfk();
+        AntiAfk.ShowWindows("", false);
         return 0;
     }
 
@@ -1198,6 +1340,20 @@ internal static class Daemon
                 {
                     string pidCsv = p.Length > 2 ? p[2] : "";
                     Reply(id, AntiAfk.AlignWindows(pidCsv).ToString());
+                    break;
+                }
+
+                case "hidewindows":
+                {
+                    string pidCsv = p.Length > 2 ? p[2] : "";
+                    Reply(id, AntiAfk.HideWindows(pidCsv).ToString());
+                    break;
+                }
+
+                case "showwindows":
+                {
+                    string pidCsv = p.Length > 2 ? p[2] : "";
+                    Reply(id, AntiAfk.ShowWindows(pidCsv, true).ToString());
                     break;
                 }
 
@@ -1285,6 +1441,7 @@ internal static class Daemon
                     // the system foreground-lock timeout -- would never run.
                     StopWatch();
                     StopAfk();
+                    AntiAfk.ShowWindows("", false);
                     Environment.Exit(0);
                     break;
 

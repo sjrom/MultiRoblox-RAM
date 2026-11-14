@@ -1415,6 +1415,12 @@ pub async fn do_launch(
         Some(30) => 30,
         _ => 60,
     };
+    let account_gfx_quality = match stored.get("gfxQuality").and_then(|v| v.as_str()) {
+        Some("low") => "low",
+        Some("medium") => "medium",
+        Some("high") => "high",
+        _ => "auto",
+    };
     let cookie: &str = if stored_cookie.is_empty() {
         cookie
     } else {
@@ -1663,7 +1669,7 @@ pub async fn do_launch(
     }
 
     let mut spawned_pid: Option<u32> = None;
-    crate::commands::apply_account_fps_xml(account_fps_cap);
+    let xml_gen = crate::commands::apply_account_launch_xml(account_fps_cap, account_gfx_quality);
     for attempt in 0..3 {
         if attempt > 0 {
             tokio::time::sleep(Duration::from_secs(3)).await;
@@ -1712,13 +1718,13 @@ pub async fn do_launch(
             // account after the first) is what made the UI's "launched"
             // color feel like it lagged the real state of the world.
             let _ = app.emit("roblox:started", account_id);
-            if account_fps_cap < 60 {
-                let app_fps = app.clone();
+            {
+                let app_xml = app.clone();
                 tokio::spawn(async move {
                     tokio::time::sleep(Duration::from_secs(6)).await;
-                    let st = app_fps.state::<AppState>();
+                    let st = app_xml.state::<AppState>();
                     let _guard = st.launch_lock.lock().await;
-                    crate::commands::fps_reset_if_low();
+                    crate::commands::restore_launch_xml_if_gen(xml_gen);
                 });
             }
             // Stagger countdown starts from actual spawn time so trailing

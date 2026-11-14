@@ -33,6 +33,7 @@
 
     setRobloxVolume: (percent) => invoke('roblox_set_volume', { percent }),
     alignRobloxWindows: () => invoke('roblox_align_windows'),
+    setRobloxWindowsHidden: (hide) => invoke('roblox_set_windows_hidden', { hide: !!hide }),
     killAllRoblox: () => invoke('roblox_kill_all'),
     killOneRoblox: (id) => invoke('roblox_kill_one', { id }),
     getRunningCount: () => invoke('roblox_running_count'),

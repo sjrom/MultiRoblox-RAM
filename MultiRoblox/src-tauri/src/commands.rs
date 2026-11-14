@@ -341,8 +341,25 @@ pub fn fflag_write(flags: Value) -> bool {
 static FPS_CAP_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
     regex::Regex::new(r#"(?i)<int\s+name="FramerateCap"\s*>(-?\d+)</int>"#).unwrap()
 });
+static SAVED_QUALITY_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
+    regex::Regex::new(r#"(?i)<token\s+name="SavedQualityLevel"\s*>(-?\d+)</token>"#).unwrap()
+});
+static GFX_QUALITY_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
+    regex::Regex::new(r#"(?i)<int\s+name="GraphicsQualityLevel"\s*>(-?\d+)</int>"#).unwrap()
+});
 static CLOSING_PROPS_RE: once_cell::sync::Lazy<regex::Regex> =
     once_cell::sync::Lazy::new(|| regex::Regex::new(r"</Properties>").unwrap());
+
+#[derive(Clone, Copy, Debug)]
+struct XmlSnapshot {
+    fps_cap: i64,
+    saved_quality: Option<i64>,
+    gfx_quality: Option<i64>,
+}
+
+static XML_SNAPSHOT: once_cell::sync::Lazy<std::sync::Mutex<Option<XmlSnapshot>>> =
+    once_cell::sync::Lazy::new(|| std::sync::Mutex::new(None));
+static XML_OVERRIDE_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 fn global_settings_path() -> std::path::PathBuf {
     let home = std::env::var("USERPROFILE").unwrap_or_default();
@@ -388,48 +405,121 @@ pub fn read_xml_fps() -> Option<i64> {
     FPS_CAP_RE.captures(&xml).and_then(|c| c[1].parse::<i64>().ok())
 }
 
-pub fn apply_account_fps_xml(account_fps_cap: i64) {
-    if let Some(cur) = read_xml_fps() {
-        if cur >= 60 {
-            RESTORE_FPS_CAP.store(cur, std::sync::atomic::Ordering::SeqCst);
-            if account_fps_cap >= 60 {
-                return;
-            }
-        }
-    }
-    fps_write_xml(account_fps_cap);
-}
-
-pub fn fps_write_xml(cap: i64) -> bool {
+fn write_xml_launch_settings(
+    fps_cap: i64,
+    saved_quality: Option<i64>,
+    gfx_quality: Option<i64>,
+    readonly_after: bool,
+) -> bool {
     let p = global_settings_path();
-    let Ok(xml) = std::fs::read_to_string(&p) else {
+    let Ok(mut xml) = std::fs::read_to_string(&p) else {
         return false;
     };
-    let value = if cap <= 0 { 9999 } else { cap };
-    let new_xml = if FPS_CAP_RE.is_match(&xml) {
+    let fps_val = if fps_cap <= 0 { 9999 } else { fps_cap };
+    xml = if FPS_CAP_RE.is_match(&xml) {
         FPS_CAP_RE
-            .replace(&xml, format!(r#"<int name="FramerateCap">{}</int>"#, value))
+            .replace(&xml, format!(r#"<int name="FramerateCap">{}</int>"#, fps_val))
             .to_string()
     } else {
-        CLOSING_PROPS_RE.replace(
-            &xml,
-            format!("\t\t\t<int name=\"FramerateCap\">{}</int>\n\t\t</Properties>", value),
-        )
-        .to_string()
+        CLOSING_PROPS_RE
+            .replace(
+                &xml,
+                format!("\t\t\t<int name=\"FramerateCap\">{}</int>\n\t\t</Properties>", fps_val),
+            )
+            .to_string()
     };
+    if let Some(sq) = saved_quality {
+        xml = if SAVED_QUALITY_RE.is_match(&xml) {
+            SAVED_QUALITY_RE
+                .replace(&xml, format!(r#"<token name="SavedQualityLevel">{}</token>"#, sq))
+                .to_string()
+        } else {
+            CLOSING_PROPS_RE
+                .replace(
+                    &xml,
+                    format!("\t\t\t<token name=\"SavedQualityLevel\">{}</token>\n\t\t</Properties>", sq),
+                )
+                .to_string()
+        };
+    }
+    if let Some(gq) = gfx_quality {
+        xml = if GFX_QUALITY_RE.is_match(&xml) {
+            GFX_QUALITY_RE
+                .replace(&xml, format!(r#"<int name="GraphicsQualityLevel">{}</int>"#, gq))
+                .to_string()
+        } else {
+            CLOSING_PROPS_RE
+                .replace(
+                    &xml,
+                    format!("\t\t\t<int name=\"GraphicsQualityLevel\">{}</int>\n\t\t</Properties>", gq),
+                )
+                .to_string()
+        };
+    }
     set_global_settings_readonly(false);
-    let ok = std::fs::write(&p, new_xml).is_ok();
-    set_global_settings_readonly(cap < 60);
+    let ok = std::fs::write(&p, xml).is_ok();
+    set_global_settings_readonly(readonly_after);
     ok
 }
 
+pub fn apply_account_launch_xml(account_fps_cap: i64, account_gfx_quality: &str) -> u64 {
+    let p = global_settings_path();
+    if let Ok(xml) = std::fs::read_to_string(&p) {
+        let cur_fps = FPS_CAP_RE.captures(&xml).and_then(|c| c[1].parse::<i64>().ok());
+        let cur_saved_q = SAVED_QUALITY_RE.captures(&xml).and_then(|c| c[1].parse::<i64>().ok());
+        let cur_gfx_q = GFX_QUALITY_RE.captures(&xml).and_then(|c| c[1].parse::<i64>().ok());
+        if let Some(fps) = cur_fps {
+            if fps >= 60 {
+                RESTORE_FPS_CAP.store(fps, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        let mut snap = XML_SNAPSHOT.lock().unwrap();
+        if snap.is_none() {
+            let baseline_fps = match cur_fps {
+                Some(v) if v >= 60 => v,
+                _ => RESTORE_FPS_CAP.load(std::sync::atomic::Ordering::SeqCst).max(60),
+            };
+            *snap = Some(XmlSnapshot {
+                fps_cap: baseline_fps,
+                saved_quality: cur_saved_q,
+                gfx_quality: cur_gfx_q,
+            });
+        }
+    }
+    let (target_saved_q, target_gfx_q) = match account_gfx_quality {
+        "low" => (1, Some(1)),
+        "medium" => (5, Some(5)),
+        "high" => (10, Some(10)),
+        _ => (0, None),
+    };
+    write_xml_launch_settings(account_fps_cap, Some(target_saved_q), target_gfx_q, true);
+    XML_OVERRIDE_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
+}
+
+pub fn restore_launch_xml_if_gen(gen: u64) {
+    if XML_OVERRIDE_GEN.load(std::sync::atomic::Ordering::SeqCst) == gen {
+        fps_reset_if_low();
+    }
+}
+
+pub fn fps_write_xml(cap: i64) -> bool {
+    write_xml_launch_settings(cap, None, None, cap < 60)
+}
+
 pub fn fps_reset_if_low() {
+    let snap = XML_SNAPSHOT.lock().unwrap().take();
+    if let Some(s) = snap {
+        write_xml_launch_settings(s.fps_cap, s.saved_quality, s.gfx_quality, false);
+        return;
+    }
     if let Some(v) = read_xml_fps() {
         if (1..60).contains(&v) {
             let restore = RESTORE_FPS_CAP.load(std::sync::atomic::Ordering::SeqCst).max(60);
-            fps_write_xml(restore);
+            write_xml_launch_settings(restore, None, None, false);
+            return;
         }
     }
+    set_global_settings_readonly(false);
 }
 
 #[tauri::command]
@@ -517,6 +607,38 @@ pub async fn roblox_align_windows(
         Ok(out) => {
             let count = out.trim().parse::<usize>().unwrap_or(0);
             Ok(serde_json::json!({ "ok": true, "aligned": count }))
+        }
+        Err(e) => Ok(serde_json::json!({ "ok": false, "error": e })),
+    }
+}
+
+#[tauri::command]
+pub async fn roblox_set_windows_hidden(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    hide: bool,
+) -> Result<Value, ()> {
+    let pids: Vec<String> = state
+        .account_pids
+        .lock()
+        .unwrap()
+        .values()
+        .copied()
+        .filter(|&pid| pid > 0)
+        .map(|pid| pid.to_string())
+        .collect();
+    if hide && pids.is_empty() {
+        return Ok(serde_json::json!({ "ok": true, "hidden": false, "count": 0 }));
+    }
+    let cmd = if hide {
+        format!("hidewindows|{}", pids.join(","))
+    } else {
+        "showwindows".to_string()
+    };
+    match crate::helper::call(&app, &state, &cmd, crate::helper::DEFAULT_TIMEOUT).await {
+        Ok(out) => {
+            let count = out.trim().parse::<usize>().unwrap_or(0);
+            Ok(serde_json::json!({ "ok": true, "hidden": hide && count > 0, "count": count }))
         }
         Err(e) => Ok(serde_json::json!({ "ok": false, "error": e })),
     }

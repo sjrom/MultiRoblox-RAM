@@ -51,49 +51,38 @@ Add-MpPreference -ExclusionPath "$env:USERPROFILE\Desktop\MultiRoblox-RAM", "$en
 ## Features
 
 ### 👤 Accounts
-- Launch as many accounts side by side as you want, and auto-align running windows into a 2-column screen grid (`1x2`, `2x2`, `3x2`, ...) with one click
-- Sign in through a real Roblox login window, or paste a cookie directly
-- Set a game ID, invite link, or private server link per account so it launches straight there
-- Per-account target FPS cap (15, 30, or 60 FPS; default 60 FPS) applied to Roblox's global client settings on launch
+- Launch as many accounts side by side as you want, with a **Start / Stop** button on each card to start or close an account in one click
+- **Hide / Show Roblox** button to hide all running Roblox windows in the background to save GPU resources and keep your taskbar clean, and bring them back anytime
+- **Align Roblox** button to neatly arrange running windows into a 2-column grid with one click
+- Automatically reconnects to your already-running accounts if you close and reopen MultiRoblox
+- Sign in through the Roblox login window, username/password, or paste a cookie directly
+- Set a game ID, invite link, or private server link per account so it joins straight into that game
+- Per-account **Target FPS** (`15`, `30`, or `60` FPS) and **Graphics Quality** (`Auto`, `Low`, `Medium`, or `High`) settings that apply only to that launched instance without changing your normal Roblox settings
 - Nicknames, search, and filtering across all saved accounts
-- Cookies encrypted with AES-256-GCM, stored locally. Nothing leaves your device
-- Auto-relaunch on unexpected disconnect, back into the same game (crash-loop protected)
-- Right-click a running account to set its process priority (Realtime down to Low)
+- Cookies encrypted and stored locally on your PC — nothing leaves your device
+- Auto-relaunch on unexpected disconnect, back into the same game
+- Right-click a running account to free memory or adjust its priority
 
 ### 📦 Groups
 - Bundle accounts into groups (farm squad, trading alts, etc.)
-- Launch or kill an entire group at once, with a shared or per-account game target
-
-### 🎚️ Mixer
-- Render quality and volume for all running instances, one panel
-- Graphics quality writes to Roblox's fast flags
-- Works with vanilla Roblox and Bloxstrap / Froststrap / Voidstrap / Fishstrap
-- Live, per-instance OS-level volume control
-- Kill all instances with one click
-
-### 📸 Tracking
-- Automated per-account screenshots sent to a Discord webhook on a timer
-- Outline one or more capture spots per account, or grab the full window
+- Launch or close an entire group at once, with a shared or per-account game link
 
 ### 📊 Charts
-- Browse top playing now, top rated, and top earning games
-- Search and launch any game straight from the charts page
-
-### 🎲 Generator
-- Generate Roblox accounts via a [bloxgen.net](https://bloxgen.net/) API key
+- Browse popular, top-rated, and top-earning games
+- Search and copy game IDs straight from the charts page
 
 ### ⚙️ Settings
-- **General**: multi-instance status, anti-AFK, relaunch-on-disconnect
-- **Performance**: RAM trim (manual or automatic on an interval), lower CPU priority once multiple accounts are running, force a specific rendering engine (Direct3D 11/9, OpenGL, Vulkan) via Fast Flags
-- **Data & Privacy**: custom encryption key (AES-256-GCM) or OS-native DPAPI (Windows keychain), clear all accounts
-- **Themes**: light/dark and several accent themes
-- **Sounds**: custom UI sound profiles with volume control and upload-your-own support
+- **General**: multi-instance toggle, anti-AFK, auto-relaunch on disconnect, remember window positions
+- **Performance**: automatic or manual memory clean-up (RAM trim), lower background CPU usage, and rendering engine options
+- **Roblox**: version lock options
+- **Data & Privacy**: local encryption key protection and account data reset
+- **Themes**: dark and accent color themes
 
 ### 🕹️ Anti-AFK
-- Taps a benign key into every open Roblox window on a configurable interval without flashing background or minimized windows, so the idle kick never fires
+- Keeps your running accounts active in the background (even when minimized or hidden) so they don't get disconnected for being idle after 20 minutes
 
 ### 📜 Logs
-- Real-time log viewer with in-page search (Ctrl+F)
+- Built-in activity log with search (Ctrl+F)
 
 ---
 

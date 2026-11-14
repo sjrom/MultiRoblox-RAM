@@ -190,6 +190,7 @@ pub fn run() {
             commands::roblox_validate_cookie,
             commands::roblox_set_volume,
             commands::roblox_align_windows,
+            commands::roblox_set_windows_hidden,
             commands::roblox_kill_all,
             commands::roblox_kill_one,
             commands::roblox_running_count,
