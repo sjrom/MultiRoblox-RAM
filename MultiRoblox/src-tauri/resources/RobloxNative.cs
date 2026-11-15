@@ -650,6 +650,7 @@ internal static class AntiAfk
 
     static readonly object _hiddenLock = new object();
     static readonly System.Collections.Generic.Dictionary<uint, IntPtr> _hiddenWindows = new System.Collections.Generic.Dictionary<uint, IntPtr>();
+    static readonly System.Collections.Generic.Dictionary<uint, RECT> _savedRects = new System.Collections.Generic.Dictionary<uint, RECT>();
 
     static System.Collections.Generic.HashSet<uint> ParsePidSet(string pidCsv)
     {
@@ -693,6 +694,13 @@ internal static class AntiAfk
                 {
                     if (!IsIconic(hWnd))
                     {
+                        RECT r;
+                        if (!IsZoomed(hWnd) && GetWindowRect(hWnd, out r) && (r.Right - r.Left > 360 || r.Bottom - r.Top > 280))
+                        {
+                            lock (_hiddenLock) { if (!_savedRects.ContainsKey(kv.Key)) _savedRects[kv.Key] = r; }
+                            SetWindowPos(hWnd, IntPtr.Zero, 0, 0, 320, 240, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOSENDCHANGING);
+                            Thread.Sleep(25);
+                        }
                         ShowWindow(hWnd, SW_SHOWMINNOACTIVE);
                         Thread.Sleep(40);
                     }
@@ -742,6 +750,14 @@ internal static class AntiAfk
                 if (!toShow.ContainsKey(pid)) toShow[pid] = hWnd;
                 return true;
             }, IntPtr.Zero);
+            if (targetPids.Count > 0 && toShow.Count < targetPids.Count)
+            {
+                foreach (var kv in EnumRobloxWindows())
+                {
+                    if (targetPids.Contains(kv.Key) && !toShow.ContainsKey(kv.Key))
+                        toShow[kv.Key] = kv.Value;
+                }
+            }
         }
 
         int count = 0;
@@ -754,6 +770,25 @@ internal static class AntiAfk
                 EnsureOpaque(hWnd);
                 ShowWindow(hWnd, restoreToScreen ? SW_RESTORE : SW_SHOWMINNOACTIVE);
                 Thread.Sleep(25);
+                if (restoreToScreen)
+                {
+                    RECT r;
+                    bool hasRect;
+                    lock (_hiddenLock)
+                    {
+                        hasRect = _savedRects.TryGetValue(kv.Key, out r);
+                        if (hasRect) _savedRects.Remove(kv.Key);
+                    }
+                    if (hasRect && r.Right > r.Left && r.Bottom > r.Top)
+                    {
+                        SetWindowPos(hWnd, IntPtr.Zero, r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOSENDCHANGING);
+                    }
+                    if (targetPids.Count == 1)
+                    {
+                        BringWindowToTop(hWnd);
+                        ForceForeground(hWnd);
+                    }
+                }
                 count++;
             }
             catch { }
@@ -795,7 +830,7 @@ internal static class AntiAfk
         var map = new System.Collections.Generic.Dictionary<uint, IntPtr>();
         if (robloxPids.Count == 0)
         {
-            lock (_hiddenLock) { _hiddenWindows.Clear(); }
+            lock (_hiddenLock) { _hiddenWindows.Clear(); _savedRects.Clear(); }
             return map;
         }
         EnumWindows((hWnd, lp) =>
@@ -818,7 +853,7 @@ internal static class AntiAfk
                 }
                 if (!map.ContainsKey(kv.Key)) map[kv.Key] = kv.Value;
             }
-            foreach (var pid in dead) _hiddenWindows.Remove(pid);
+            foreach (var pid in dead) { _hiddenWindows.Remove(pid); _savedRects.Remove(pid); }
         }
         return map;
     }

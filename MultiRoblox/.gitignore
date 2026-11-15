@@ -17,6 +17,10 @@ dist-ssr
 !.vscode/extensions.json
 .idea
 .claude
+.agent
+.agents
+AGENTS.md
+GEMINI.md
 .DS_Store
 *.suo
 *.ntvs*

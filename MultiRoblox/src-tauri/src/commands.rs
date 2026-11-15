@@ -32,6 +32,23 @@ pub fn set_hide_to_tray(app: tauri::AppHandle, enabled: bool) {
     crate::tray::apply_setting(&app, enabled);
 }
 
+#[tauri::command]
+pub fn set_taskbar_status(app: tauri::AppHandle, title: String, rgba: Option<Vec<u8>>) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_title(&title);
+        #[cfg(target_os = "windows")]
+        {
+            let img = rgba
+                .filter(|b| b.len() == 32 * 32 * 4)
+                .map(|b| tauri::image::Image::new_owned(b, 32, 32));
+            let _ = w.set_overlay_icon(img);
+        }
+    }
+    if let Some(tray) = app.tray_by_id(crate::tray::TRAY_ID) {
+        let _ = tray.set_tooltip(Some(&title));
+    }
+}
+
 // ---- settings ----
 #[tauri::command]
 pub fn settings_load() -> Value {
@@ -638,6 +655,41 @@ pub async fn roblox_set_windows_hidden(
     match crate::helper::call(&app, &state, &cmd, crate::helper::DEFAULT_TIMEOUT).await {
         Ok(out) => {
             let count = out.trim().parse::<usize>().unwrap_or(0);
+            if hide && count > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                let _ = crate::native::trim_roblox_memory(&app, &state).await;
+            }
+            Ok(serde_json::json!({ "ok": true, "hidden": hide && count > 0, "count": count }))
+        }
+        Err(e) => Ok(serde_json::json!({ "ok": false, "error": e })),
+    }
+}
+
+#[tauri::command]
+pub async fn roblox_set_account_window_hidden(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    hide: bool,
+) -> Result<Value, ()> {
+    let Some(pid) = state.account_pids.lock().unwrap().get(&id).copied() else {
+        return Ok(serde_json::json!({ "ok": false, "error": "Account is not running" }));
+    };
+    if pid == 0 {
+        return Ok(serde_json::json!({ "ok": false, "error": "Account is not running" }));
+    }
+    let cmd = if hide {
+        format!("hidewindows|{}", pid)
+    } else {
+        format!("showwindows|{}", pid)
+    };
+    match crate::helper::call(&app, &state, &cmd, crate::helper::DEFAULT_TIMEOUT).await {
+        Ok(out) => {
+            let count = out.trim().parse::<usize>().unwrap_or(0);
+            if hide && count > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                let _ = crate::native::trim_account_memory(&app, &state, &id).await;
+            }
             Ok(serde_json::json!({ "ok": true, "hidden": hide && count > 0, "count": count }))
         }
         Err(e) => Ok(serde_json::json!({ "ok": false, "error": e })),
@@ -717,16 +769,29 @@ pub async fn roblox_running_count(app: AppHandle, state: State<'_, AppState>) ->
     Ok(crate::native::count_roblox_processes(&app, &state).await)
 }
 
-// Polled by the frontend to self-heal card state if a push event is missed.
+// Polled by the frontend to self-heal card state if a push event is missed,
+// and to report live Working Set RAM (MB) for each running account.
 #[tauri::command]
-pub async fn roblox_watched_ids(state: State<'_, AppState>) -> Result<Vec<String>, ()> {
-    Ok(state
+pub async fn roblox_watched_ids(
+    state: State<'_, AppState>,
+) -> Result<std::collections::HashMap<String, u32>, ()> {
+    let ids: Vec<String> = state
         .watched_accounts
         .lock()
         .unwrap()
         .keys()
         .cloned()
-        .collect())
+        .collect();
+    let pids = state.account_pids.lock().unwrap().clone();
+    let mut out = std::collections::HashMap::with_capacity(ids.len());
+    for id in ids {
+        let mb = pids
+            .get(&id)
+            .and_then(|&pid| crate::native::process_memory_mb(pid))
+            .unwrap_or(0);
+        out.insert(id, mb);
+    }
+    Ok(out)
 }
 
 #[tauri::command]

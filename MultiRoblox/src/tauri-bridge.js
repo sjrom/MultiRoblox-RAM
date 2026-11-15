@@ -15,6 +15,7 @@
     close: () => win.close(),
     quitApp: () => invoke('quit_app'),
     setHideToTray: (enabled) => invoke('set_hide_to_tray', { enabled }),
+    setTaskbarStatus: (title, rgba) => invoke('set_taskbar_status', { title, rgba: rgba || null }),
 
     loadAccounts: () => invoke('accounts_load'),
     addAccount: (account) => invoke('accounts_add', { account }),
@@ -34,6 +35,7 @@
     setRobloxVolume: (percent) => invoke('roblox_set_volume', { percent }),
     alignRobloxWindows: () => invoke('roblox_align_windows'),
     setRobloxWindowsHidden: (hide) => invoke('roblox_set_windows_hidden', { hide: !!hide }),
+    setAccountWindowHidden: (id, hide) => invoke('roblox_set_account_window_hidden', { id, hide: !!hide }),
     killAllRoblox: () => invoke('roblox_kill_all'),
     killOneRoblox: (id) => invoke('roblox_kill_one', { id }),
     getRunningCount: () => invoke('roblox_running_count'),

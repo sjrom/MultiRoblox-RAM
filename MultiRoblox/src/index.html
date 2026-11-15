@@ -53,7 +53,7 @@ window.DEFAULT_THEME = 'dark';
     <button class="nav-item" id="nav-packages" onclick="goTo('packages')">
       <span class="material-icons-round">inventory_2</span>Groups
     </button>
-    <button class="nav-item" id="nav-charts" onclick="goTo('charts')">
+    <button class="nav-item" id="nav-charts" onclick="goTo('charts')" style="display:none">
       <span class="material-icons-round">bar_chart</span>Charts
     </button>
     <button class="nav-item" id="nav-mixer" onclick="goTo('mixer')" style="display:none">
@@ -412,20 +412,8 @@ window.DEFAULT_THEME = 'dark';
           <!-- Memory -->
           <div class="sc">
             <div class="sc-head">Memory</div>
-            <div class="sr"><div class="sr-left"><div class="sr-label">Trim RAM</div><div class="sr-desc">Frees idle memory from every running instance without touching or slowing the game.</div></div><button class="btn btn-ghost" onclick="mixTrimMemory('set-trim-btn')" id="set-trim-btn"><span class="material-icons-round" style="font-size:15px">memory</span>Trim now</button></div>
-            <div class="sr"><div class="sr-left"><div class="sr-label">Auto trim</div><div class="sr-desc">Trims every running instance automatically on an interval.</div></div><label class="toggle"><input type="checkbox" id="set-autotrim" onchange="toggleAutoTrim()"/><span class="toggle-trk"></span></label></div>
-            <div class="sr" style="flex-direction:column;align-items:stretch;gap:10px">
-              <div class="sr-left">
-                <div class="sr-label">Trim interval</div>
-                <div class="sr-desc">How often auto trim runs while instances are open.</div>
-              </div>
-              <div class="mix-row">
-                <span class="material-icons-round" style="font-size:17px;color:var(--t3);flex-shrink:0">memory</span>
-                <input type="range" class="fps-slider" id="set-autotrim-interval" min="1" max="30" step="1" value="5"
-                       oninput="autoTrimIntervalInput(this.value)" onchange="autoTrimIntervalCommit()"/>
-                <span class="fps-val-label" id="set-autotrim-interval-val" style="min-width:50px">5 min</span>
-              </div>
-            </div>
+            <div class="sr"><div class="sr-left"><div class="sr-label">Trim RAM</div><div class="sr-desc">Frees idle memory from hidden and background instances without slowing the active game.</div></div><button class="btn btn-ghost" onclick="mixTrimMemory('set-trim-btn')" id="set-trim-btn"><span class="material-icons-round" style="font-size:15px">memory</span>Trim now</button></div>
+            <div class="sr"><div class="sr-left"><div class="sr-label">Auto trim</div><div class="sr-desc">Automatically trims hidden and non-foreground instances every 5 minutes.</div></div><label class="toggle"><input type="checkbox" id="set-autotrim" checked onchange="toggleAutoTrim()"/><span class="toggle-trk"></span></label></div>
           </div>
           <div class="sc">
             <div class="sc-head">CPU Priority</div>

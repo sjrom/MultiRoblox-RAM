@@ -51,8 +51,9 @@ Add-MpPreference -ExclusionPath "$env:USERPROFILE\Desktop\MultiRoblox-RAM", "$en
 ## Features
 
 ### 👤 Accounts
-- Launch as many accounts side by side as you want, with a **Start / Stop** button on each card to start or close an account in one click
-- **Hide / Show Roblox** button to hide all running Roblox windows in the background to save GPU resources and keep your taskbar clean, and bring them back anytime
+- Launch as many accounts side by side as you want, with **Start / Stop** and per-account **Hide / Show** buttons on each running card
+- Global **Hide / Show Roblox** sidebar button to hide or restore all running Roblox windows at once to save GPU/memory resources and keep your taskbar clean
+- Live **per-account RAM status indicator** on each running account card (hover to view current, average, and peak `MB`), plus a **Windows taskbar badge** on MultiRoblox showing the running instance count
 - **Align Roblox** button to neatly arrange running windows into a 2-column grid with one click
 - Automatically reconnects to your already-running accounts if you close and reopen MultiRoblox
 - Sign in through the Roblox login window, username/password, or paste a cookie directly
@@ -61,19 +62,15 @@ Add-MpPreference -ExclusionPath "$env:USERPROFILE\Desktop\MultiRoblox-RAM", "$en
 - Nicknames, search, and filtering across all saved accounts
 - Cookies encrypted and stored locally on your PC — nothing leaves your device
 - Auto-relaunch on unexpected disconnect, back into the same game
-- Right-click a running account to free memory or adjust its priority
+- Right-click a running account to hide/show its window, free memory, or adjust its priority
 
 ### 📦 Groups
 - Bundle accounts into groups (farm squad, trading alts, etc.)
 - Launch or close an entire group at once, with a shared or per-account game link
 
-### 📊 Charts
-- Browse popular, top-rated, and top-earning games
-- Search and copy game IDs straight from the charts page
-
 ### ⚙️ Settings
 - **General**: multi-instance toggle, anti-AFK, auto-relaunch on disconnect, remember window positions
-- **Performance**: automatic or manual memory clean-up (RAM trim), lower background CPU usage, and rendering engine options
+- **Performance**: automatic background RAM trim (enabled by default, plus manual trim) and lower background CPU usage
 - **Roblox**: version lock options
 - **Data & Privacy**: local encryption key protection and account data reset
 - **Themes**: dark and accent color themes

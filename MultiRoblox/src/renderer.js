@@ -227,7 +227,7 @@ async function continueInit() {
   });
   checkRuntimeEnv();
   startStatusPoll();
-  if (settings.autoTrim) startAutoTrimLoop();
+  if (settings.autoTrim !== false) startAutoTrimLoop();
   startTrackingLoop();
   logEntry('info', 'system', 'MultiRoblox started', { version: 'v1', accounts: accounts.length, platform: navigator.platform });
   try { const k = localStorage.getItem('bloxgen_apikey'); if (k) { const el = document.getElementById('gen-apikey'); if (el) el.value = k; } } catch {}
@@ -375,16 +375,18 @@ async function detectRobloxVersion() {
   }
 }
 
+let _baseAppTitle = 'MultiRoblox';
 async function showAppVersion() {
   let v;
   try { v = await api.getAppVersion(); } catch { return; }
   if (v) {
     const t = 'MultiRoblox v' + v;
-    document.title = t;
+    _baseAppTitle = t;
     const el = document.getElementById('tb-app-title');
     if (el) el.textContent = t;
     const statEl = document.getElementById('stat-app-ver');
     if (statEl) statEl.textContent = 'v' + v;
+    updateTaskbarStatus();
   }
 }
 
@@ -440,15 +442,7 @@ function applySettings() {
     if (afkIvVal) afkIvVal.textContent = mins + ' min';
   }
   const trim = document.getElementById('set-autotrim');
-  if (trim) trim.checked = !!settings.autoTrim;
-  const trimIv = document.getElementById('set-autotrim-interval');
-  if (trimIv) {
-    const mins = settings.autoTrimIntervalMin || 5;
-    trimIv.value = mins;
-    updateSliderFill(trimIv);
-    const trimIvVal = document.getElementById('set-autotrim-interval-val');
-    if (trimIvVal) trimIvVal.textContent = mins + ' min';
-  }
+  if (trim) trim.checked = settings.autoTrim !== false;
   const relaunch = document.getElementById('set-autorelaunch');
   if (relaunch) relaunch.checked = !!settings.autoRelaunch;
   const lowPriority = document.getElementById('set-lowpriority');
@@ -568,12 +562,14 @@ async function _autoTrimTick() {
   if (_mixRunning <= 0) return;
   let res;
   try { res = await api.trimRobloxMemory(); } catch { return; }
-  if (res && res.ok && res.total > 0) logEntry('info', 'system', `Auto-trimmed ${res.trimmed}/${res.total} Roblox instance(s)`);
+  if (res && res.ok && res.total > 0) {
+    logEntry('info', 'system', `Auto-trimmed ${res.trimmed}/${res.total} Roblox instance(s)`);
+    setTimeout(pollWatchedIds, 300);
+  }
 }
 function startAutoTrimLoop() {
   stopAutoTrimLoop();
-  const mins = settings.autoTrimIntervalMin || 5;
-  _autoTrimTimer = setInterval(_autoTrimTick, mins * 60 * 1000);
+  _autoTrimTimer = setInterval(_autoTrimTick, 5 * 60 * 1000);
 }
 function stopAutoTrimLoop() {
   if (_autoTrimTimer) { clearInterval(_autoTrimTimer); _autoTrimTimer = null; }
@@ -633,17 +629,6 @@ function toggleAutoTrim() {
   api.saveSettings({ autoTrim: on });
   if (on) startAutoTrimLoop(); else stopAutoTrimLoop();
   toast(on ? 'Auto trim on' : 'Auto trim off', on ? 'ok' : 'err');
-}
-function autoTrimIntervalInput(v) {
-  document.getElementById('set-autotrim-interval-val').textContent = v + ' min';
-  updateSliderFill(document.getElementById('set-autotrim-interval'));
-}
-function autoTrimIntervalCommit() {
-  const mins = parseInt(document.getElementById('set-autotrim-interval').value, 10);
-  settings.autoTrimIntervalMin = mins;
-  api.saveSettings({ autoTrimIntervalMin: mins });
-  if (settings.autoTrim) startAutoTrimLoop();
-  toast('Auto trim interval: ' + mins + ' min', 'ok');
 }
 
 function toggleCdd(name) {
@@ -771,6 +756,73 @@ function goTo(p) {
   refreshAllSliderFills();
 }
 
+const _accountRamMb = {}; // accountId -> live Working Set MB
+const _accountRamStats = {}; // accountId -> { cur, sum, count, avg, peak, startedAt }
+const _hiddenIds = new Set(); // accountIds whose Roblox window is currently hidden
+const RAM_WARMUP_MS = 5 * 60 * 1000; // keep indicator green for first 5 min while baseline stabilizes
+
+function _recordRamSample(id, mb) {
+  if (!mb || mb <= 0) return null;
+  let st = _accountRamStats[id];
+  if (!st) {
+    st = { cur: mb, sum: mb, count: 1, avg: mb, peak: mb, startedAt: Date.now() };
+    _accountRamStats[id] = st;
+  } else {
+    st.cur = mb;
+    st.sum += mb;
+    st.count += 1;
+    st.avg = Math.round(st.sum / st.count);
+    if (mb > st.peak) st.peak = mb;
+  }
+  return st;
+}
+
+function _ramStatusInfo(id) {
+  const st = _accountRamStats[id];
+  if (!st || !st.cur) return null;
+  const { cur, avg, peak, startedAt } = st;
+  const settled = (Date.now() - startedAt) >= RAM_WARMUP_MS;
+  let cls = 'ram-ok', label = 'Normal';
+  if (settled) {
+    if (cur >= 1400 || (cur > avg * 1.25 && cur >= peak * 0.85 && cur > 700)) {
+      cls = 'ram-crit';
+      label = 'Critical';
+    } else if (cur >= 850 || (cur > avg * 1.15 && cur > 500)) {
+      cls = 'ram-warn';
+      label = 'Warning';
+    }
+  }
+  const tip = `RAM: ${cur} MB (Avg: ${avg} MB · Peak: ${peak} MB) — ${label}`;
+  return { cls, tip };
+}
+
+function updateCardRamUI(id) {
+  const ramEl = document.getElementById('ram-' + id);
+  if (!ramEl) return;
+  const isLive = _launchedIds.has(id);
+  const info = isLive ? _ramStatusInfo(id) : null;
+  if (!info) {
+    ramEl.className = 'card-ram';
+    ramEl.removeAttribute('title');
+    return;
+  }
+  ramEl.className = 'card-ram visible ' + info.cls;
+  ramEl.title = info.tip;
+}
+
+function updateCardVisButton(id) {
+  const btn = document.getElementById('vis-' + id);
+  if (!btn) return;
+  const isLive = _launchedIds.has(id);
+  const isHidden = _hiddenIds.has(id);
+  btn.style.display = isLive ? 'inline-flex' : 'none';
+  btn.textContent = isHidden ? 'Show' : 'Hide';
+  btn.title = isHidden ? 'Show this Roblox window' : 'Hide this Roblox window';
+}
+function updateAllCardVisButtons() {
+  accounts.forEach(a => updateCardVisButton(a.id));
+}
+
 function setCardLiveState(card, shouldBeLive) {
   if (!card) return;
   card.classList.toggle('is-live', shouldBeLive);
@@ -784,6 +836,17 @@ function setCardLiveState(card, shouldBeLive) {
     btn.disabled = false;
     btn.textContent = shouldBeLive ? 'Stop' : 'Start';
   }
+  if (!shouldBeLive && card.dataset.id) {
+    delete _accountRamMb[card.dataset.id];
+    delete _accountRamStats[card.dataset.id];
+    updateCardRamUI(card.dataset.id);
+    _hiddenIds.delete(card.dataset.id);
+    if (_hiddenIds.size === 0 && _windowsHidden) {
+      _windowsHidden = false;
+      updateHideButtonUI();
+    }
+  }
+  if (card.dataset.id) updateCardVisButton(card.dataset.id);
 }
 
 function markLaunched(id) {
@@ -837,6 +900,7 @@ function showCardMenu(id, x, y) {
   menu.innerHTML = `
     <div class="ctx-header">${esc(a ? (a.nickname || a.username || 'Unknown') : id)}</div>
     ${isLive ? `<button class="ctx-item ctx-danger" onclick="ctxKill('${id}')"><span class="material-icons-round">power_settings_new</span>Kill instance</button>` : ''}
+    ${isLive ? `<button class="ctx-item" onclick="ctxToggleWin('${id}')"><span class="material-icons-round">${_hiddenIds.has(id) ? 'visibility' : 'visibility_off'}</span>${_hiddenIds.has(id) ? 'Show window' : 'Hide window'}</button>` : ''}
     ${isLive ? `<button class="ctx-item" onclick="ctxTrim('${id}')"><span class="material-icons-round">memory</span>Trim memory</button>` : ''}
     ${isLive ? `
     <div class="ctx-item ctx-has-sub">
@@ -915,6 +979,7 @@ function positionCardSubmenu(menu, vw, vh) {
 }
 function closeCardMenu() { const m = document.getElementById('card-ctx-menu'); if (m) m.remove(); _ctxMenuId = null; }
 async function ctxKill(id) { closeCardMenu(); await killOne(id); }
+async function ctxToggleWin(id) { closeCardMenu(); await toggleAccountWindow(id); }
 async function ctxTrim(id) {
   closeCardMenu();
   const a = accounts.find(x => x.id === id);
@@ -923,6 +988,7 @@ async function ctxTrim(id) {
   if (res?.ok) {
     logEntry('info', 'system', `Trimmed memory for ${a?.username || id}`, { accountId: id, username: a?.username, userId: a?.userId });
     toast(`Trimmed memory for ${a?.nickname || a?.username || 'instance'}`, 'ok');
+    setTimeout(pollWatchedIds, 300);
   } else {
     toast(res?.error || 'Could not trim this instance', 'err');
   }
@@ -998,12 +1064,15 @@ function render() {
           <div class="card-name">${esc(a.nickname || a.username || 'Unknown')}</div>
           <span class="card-expired" title="This account's cookie is no longer valid. Re-add the account to refresh it."><span class="material-icons-round">error_outline</span>Expired</span>
         </div>
-        <div class="card-uid">${a.userId ? 'ID ' + a.userId : 'No ID'} · ${(a.fpsCap === 15 || a.fpsCap === 30) ? a.fpsCap : 60} FPS · ${GFX_LABELS[a.gfxQuality] || 'Auto'} GFX</div>
+        <div class="card-uid"><span>${a.userId ? 'ID ' + a.userId : 'No ID'} · ${(a.fpsCap === 15 || a.fpsCap === 30) ? a.fpsCap : 60} FPS · ${GFX_LABELS[a.gfxQuality] || 'Auto'}</span><span class="card-ram${(_launchedIds.has(a.id) && _ramStatusInfo(a.id)) ? ' visible ' + _ramStatusInfo(a.id).cls : ''}" id="ram-${a.id}"${(_launchedIds.has(a.id) && _ramStatusInfo(a.id)) ? ' title="' + esc(_ramStatusInfo(a.id).tip) + '"' : ''}><span class="material-icons-round">memory</span></span></div>
       </div>
       <div class="card-game ${a.gameTarget ? 'visible' : ''}" id="gt-${a.id}" title="${esc(a.gameTarget || '')}">${a.gameTarget ? esc(truncate(_gameNameCache[a.id] || extractTargetLabel(a.gameTarget), 22)) : ''}</div>
       <div class="card-row">
         <button class="btn btn-launch" onclick="onCardPrimaryAction('${a.id}')">
           ${_launchedIds.has(a.id) ? 'Stop' : 'Start'}
+        </button>
+        <button class="btn btn-vis" id="vis-${a.id}" onclick="toggleAccountWindow('${a.id}')" style="display:${_launchedIds.has(a.id) ? 'inline-flex' : 'none'}" title="${_hiddenIds.has(a.id) ? 'Show this Roblox window' : 'Hide this Roblox window'}">
+          ${_hiddenIds.has(a.id) ? 'Show' : 'Hide'}
         </button>
         <button class="btn btn-edit" onclick="openEdit('${a.id}')" aria-label="Edit account">
           <span class="material-icons-round">edit</span>
@@ -2639,10 +2708,54 @@ function clampInt(v, min, max, dflt) {
   return Math.max(min, Math.min(max, n));
 }
 
+let _lastTaskbarKey = '';
+function _renderBadgeRgba(count, isHidden) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const ctx = c.getContext('2d');
+  ctx.beginPath();
+  ctx.arc(16, 16, 14.5, 0, Math.PI * 2);
+  ctx.fillStyle = isHidden ? '#f59e0b' : '#22c55e';
+  ctx.fill();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = '#090d16';
+  ctx.stroke();
+  ctx.fillStyle = '#090d16';
+  ctx.font = (count > 9 ? '800 15px ' : '800 19px ') + 'Inter, system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(count > 9 ? '9+' : String(count), 16, 17);
+  return Array.from(ctx.getImageData(0, 0, 32, 32).data);
+}
+
+function updateTaskbarStatus() {
+  const running = _mixRunning || 0;
+  const hiddenCount = _hiddenIds.size;
+  const isHidden = running > 0 && (_windowsHidden || hiddenCount > 0);
+  let title = _baseAppTitle;
+  if (running > 0) {
+    const stateTxt = isHidden
+      ? (hiddenCount > 0 && hiddenCount < running ? `${hiddenCount}/${running} Hidden` : `${running} Running · Hidden`)
+      : `${running} Running`;
+    title = `(${stateTxt}) ${_baseAppTitle}`;
+  }
+  document.title = title;
+  const key = `${running}:${hiddenCount}:${isHidden ? 1 : 0}:${title}`;
+  if (key === _lastTaskbarKey) return;
+  _lastTaskbarKey = key;
+  if (api.setTaskbarStatus) {
+    const rgba = running > 0 ? _renderBadgeRgba(running, isHidden) : null;
+    api.setTaskbarStatus(title, rgba).catch(() => {});
+  }
+}
+
 function setRunningBadges(n) {
-  if (n === 0 && _windowsHidden) {
+  _mixRunning = n;
+  if (n === 0 && (_windowsHidden || _hiddenIds.size > 0)) {
     _windowsHidden = false;
+    _hiddenIds.clear();
     updateHideButtonUI();
+    updateAllCardVisButtons();
   }
   const txt = n + ' running';
   const tb = document.getElementById('tb-running');
@@ -2651,6 +2764,7 @@ function setRunningBadges(n) {
     tb.classList.toggle('live', n > 0);
     tb.style.display = n > 0 ? 'inline-flex' : 'none';
   }
+  updateTaskbarStatus();
 }
 
 let _statusPoll = null;
@@ -2667,9 +2781,24 @@ async function pollRunningCount() {
 // Reconciles card state against the backend's watched/alive list, in case a
 // push event (onRobloxClosed etc) was missed or lagged.
 async function pollWatchedIds() {
-  let ids;
-  try { ids = await api.getWatchedIds(); } catch { return; }
+  let data;
+  try { data = await api.getWatchedIds(); } catch { return; }
+  const isMap = data && !Array.isArray(data) && typeof data === 'object';
+  const ids = isMap ? Object.keys(data) : (data || []);
   const watched = new Set(ids);
+  for (const k of Object.keys(_accountRamMb)) {
+    if (!watched.has(k)) {
+      delete _accountRamMb[k];
+      delete _accountRamStats[k];
+    }
+  }
+  if (isMap) {
+    for (const id of ids) {
+      const mb = data[id] || 0;
+      _accountRamMb[id] = mb;
+      if (mb > 0) _recordRamSample(id, mb);
+    }
+  }
   // Cards that drop out of the active filter get pulled from the DOM
   // directly instead of a full render(), which would replay entrance
   // animations and flicker on every poll tick.
@@ -2685,6 +2814,7 @@ async function pollWatchedIds() {
       if (shouldBeLive) _launchedIds.add(id); else _launchedIds.delete(id);
       if (dropFromFilter && dropFromFilter(id)) card.remove();
     }
+    updateCardRamUI(id);
   });
 }
 function pollStatus() {
@@ -2955,6 +3085,7 @@ function updateHideButtonUI() {
   if (btn) btn.classList.toggle('active', _windowsHidden);
   if (icon) icon.textContent = _windowsHidden ? 'visibility' : 'visibility_off';
   if (label) label.textContent = _windowsHidden ? 'Show Roblox' : 'Hide Roblox';
+  updateTaskbarStatus();
 }
 
 async function toggleHideRobloxWindows() {
@@ -2968,15 +3099,55 @@ async function toggleHideRobloxWindows() {
       const n = res.count || 0;
       if (wantHide && n === 0) {
         _windowsHidden = false;
+        _hiddenIds.clear();
         updateHideButtonUI();
+        updateAllCardVisButtons();
         toast('No controlled Roblox windows to hide', 'err');
       } else {
         _windowsHidden = wantHide;
+        if (wantHide) {
+          for (const id of _launchedIds) _hiddenIds.add(id);
+        } else {
+          _hiddenIds.clear();
+        }
         updateHideButtonUI();
+        updateAllCardVisButtons();
         toast(wantHide
           ? `Hidden ${n} controlled instance${n === 1 ? '' : 's'}`
           : `Restored ${n} instance${n === 1 ? '' : 's'}`, 'ok');
+        if (wantHide) setTimeout(pollWatchedIds, 400);
       }
+    } else {
+      toast((wantHide ? 'Hide' : 'Show') + ' failed' + (res && res.error ? ': ' + res.error : ''), 'err');
+    }
+  } catch (e) {
+    toast((wantHide ? 'Hide' : 'Show') + ' failed: ' + (e.message || e), 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function toggleAccountWindow(id) {
+  if (!_launchedIds.has(id)) return;
+  const btn = document.getElementById('vis-' + id);
+  if (btn && btn.disabled) return;
+  if (btn) btn.disabled = true;
+  const wantHide = !_hiddenIds.has(id);
+  const a = accounts.find(x => x.id === id);
+  try {
+    const res = await api.setAccountWindowHidden(id, wantHide);
+    if (res && res.ok) {
+      if (wantHide) {
+        _hiddenIds.add(id);
+        if (_launchedIds.size > 0 && _hiddenIds.size >= _launchedIds.size) _windowsHidden = true;
+        setTimeout(pollWatchedIds, 400);
+      } else {
+        _hiddenIds.delete(id);
+        if (_hiddenIds.size === 0) _windowsHidden = false;
+      }
+      updateHideButtonUI();
+      updateCardVisButton(id);
+      toast((wantHide ? 'Hidden ' : 'Restored ') + (a ? (a.nickname || a.username || id) : id), 'ok');
     } else {
       toast((wantHide ? 'Hide' : 'Show') + ' failed' + (res && res.error ? ': ' + res.error : ''), 'err');
     }
@@ -2995,9 +3166,11 @@ async function alignRobloxWindows() {
   try {
     const res = await api.alignRobloxWindows();
     if (res && res.ok) {
-      if (_windowsHidden) {
+      if (_windowsHidden || _hiddenIds.size > 0) {
         _windowsHidden = false;
+        _hiddenIds.clear();
         updateHideButtonUI();
+        updateAllCardVisButtons();
       }
       const n = res.aligned || 0;
       toast(n ? `Aligned ${n} instance${n === 1 ? '' : 's'}` : 'No running Roblox instances', n ? 'ok' : 'err');
@@ -3018,6 +3191,9 @@ async function mixKillAll() {
   const res = await api.killAllRoblox();
   // Reset all dots / launched state.
   _launchedIds.clear();
+  _hiddenIds.clear();
+  _windowsHidden = false;
+  updateHideButtonUI();
   document.querySelectorAll('.card.is-live').forEach(c => setCardLiveState(c, false));
   refreshPkgAvatarStatus();
   await mixRefreshRunning();
@@ -3061,6 +3237,7 @@ async function mixTrimMemory(btnId = 'set-trim-btn') {
   btn.innerHTML = orig;
   if (res && res.ok) {
     toast(res.total > 0 ? `Trimmed ${res.trimmed}/${res.total} instance(s)` : 'No running instances', 'ok');
+    setTimeout(pollWatchedIds, 300);
   } else {
     toast('Trim failed', 'err');
   }

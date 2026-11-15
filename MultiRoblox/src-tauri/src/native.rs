@@ -474,6 +474,50 @@ fn trim_process_memory(_pid: u32) -> bool {
     false
 }
 
+#[cfg(windows)]
+fn foreground_window_pid() -> Option<u32> {
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.0.is_null() {
+            return None;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid > 0 { Some(pid) } else { None }
+    }
+}
+#[cfg(not(windows))]
+fn foreground_window_pid() -> Option<u32> {
+    None
+}
+
+#[cfg(windows)]
+pub fn process_memory_mb(pid: u32) -> Option<u32> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    if pid == 0 {
+        return None;
+    }
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut pmc = PROCESS_MEMORY_COUNTERS::default();
+        pmc.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+        let ok = GetProcessMemoryInfo(handle, &mut pmc, pmc.cb).is_ok();
+        let _ = CloseHandle(handle);
+        if ok {
+            Some((pmc.WorkingSetSize / (1024 * 1024)) as u32)
+        } else {
+            None
+        }
+    }
+}
+#[cfg(not(windows))]
+pub fn process_memory_mb(_pid: u32) -> Option<u32> {
+    None
+}
+
 // Matches Task Manager's own priority names/mapping (its "Low" is
 // IDLE_PRIORITY_CLASS, not a literal low-priority constant).
 #[cfg(windows)]
@@ -587,10 +631,11 @@ pub async fn trim_roblox_memory(app: &AppHandle, state: &AppState) -> Value {
             .collect()
     };
 
+    let fg_pid = foreground_window_pid();
     let mut total = 0u32;
     let mut trimmed = 0u32;
     for pid in alive_pids {
-        if launching_pids.contains(&pid) {
+        if launching_pids.contains(&pid) || Some(pid) == fg_pid {
             continue;
         }
         total += 1;
@@ -1785,11 +1830,23 @@ pub async fn do_launch(
             let _ = app.emit("roblox:started", account_id);
             {
                 let app_xml = app.clone();
+                let acct_trim = account_id.to_string();
                 tokio::spawn(async move {
                     tokio::time::sleep(Duration::from_secs(12)).await;
+                    {
+                        let st = app_xml.state::<AppState>();
+                        let _guard = st.launch_lock.lock().await;
+                        crate::commands::restore_launch_xml_if_gen(xml_gen);
+                    }
+                    // Initial cold-page trim ~65s after spawn (once asset decompression settles).
+                    tokio::time::sleep(Duration::from_secs(53)).await;
                     let st = app_xml.state::<AppState>();
-                    let _guard = st.launch_lock.lock().await;
-                    crate::commands::restore_launch_xml_if_gen(xml_gen);
+                    let cur_pid = st.account_pids.lock().unwrap().get(&acct_trim).copied();
+                    if let Some(p) = cur_pid {
+                        if p > 0 && Some(p) != foreground_window_pid() {
+                            let _ = trim_process_memory(p);
+                        }
+                    }
                 });
             }
             // Stagger countdown starts from actual spawn time so trailing
