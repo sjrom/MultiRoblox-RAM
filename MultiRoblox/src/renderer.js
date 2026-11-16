@@ -782,17 +782,8 @@ function _ramStatusInfo(id) {
   if (!st || !st.cur) return null;
   const { cur, avg, peak, startedAt } = st;
   const settled = (Date.now() - startedAt) >= RAM_WARMUP_MS;
-  let cls = 'ram-ok', label = 'Normal';
-  if (settled) {
-    if (cur >= 1400 || (cur > avg * 1.25 && cur >= peak * 0.85 && cur > 700)) {
-      cls = 'ram-crit';
-      label = 'Critical';
-    } else if (cur >= 850 || (cur > avg * 1.15 && cur > 500)) {
-      cls = 'ram-warn';
-      label = 'Warning';
-    }
-  }
-  const tip = `RAM: ${cur} MB (Avg: ${avg} MB · Peak: ${peak} MB) — ${label}`;
+  const cls = (settled && cur >= 1024 && cur > avg * 1.2) ? 'ram-warn' : 'ram-ok';
+  const tip = `RAM: ${cur} MB (Avg: ${avg} MB · Peak: ${peak} MB)`;
   return { cls, tip };
 }
 

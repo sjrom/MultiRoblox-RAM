@@ -220,7 +220,6 @@ button:focus-visible,.nav-item:focus-visible,.tab-btn:focus-visible{outline:none
 .card-ram .material-icons-round{font-size:14px;line-height:1}
 .card-ram.ram-ok{color:var(--green);background:var(--gd)}
 .card-ram.ram-warn{color:#f59e0b;background:rgba(245,158,11,.14)}
-.card-ram.ram-crit{color:var(--red);background:var(--rd)}
 /* Always kept in flow (visibility, not display) so every card reserves the
    same height whether or not it has a game/server target; otherwise cards
    without one shrink and mismatch height against cards that have one, since
