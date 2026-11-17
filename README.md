@@ -35,16 +35,10 @@ build.bat
 
 To bump the app version, edit only `[package].version` in `MultiRoblox/src-tauri/Cargo.toml`, then run `build.bat`. Tauri, the release directory, and the release EXE filename use that version. Cargo updates `Cargo.lock` during the build; commit that generated change along with the version bump.
 
-### 🛡️ Windows Defender Exclusion (False Positive Prevention)
+### 🛡️ Windows Defender False Positive
+Because MultiRoblox extracts an unsigned helper (`RobloxNative.exe`) to manage Roblox's multi-instance lock, Windows Defender may occasionally flag it. The app includes a built-in first-run prompt to add the exclusion via UAC automatically — no manual PowerShell setup needed.
 
-Because MultiRoblox extracts its unsigned helper (`RobloxNative.exe`) to `%APPDATA%\multiroblox` and closes Roblox's singleton mutex/event handles across processes, Windows Defender's behavioral ML engine may falsely flag it (`Behavior:Win32/DefenseEvasion.A!ml`). `Add-MpPreference` natively supports `*` wildcards in both `-ExclusionPath` and `-ExclusionProcess`, so a single rule covers `MultiRoblox_v1.2.X.exe` across all versions. Run this command once in an **Administrator PowerShell**:
-
-**中文說明（防止 Windows Defender 誤判隔離）：**
-由於 MultiRoblox 會在啟動時將未簽章的輔助程式（`RobloxNative.exe`）釋放至 `%APPDATA%\multiroblox`，並跨處理序關閉 Roblox 的單開限制 Handle，Windows Defender 的機器學習行為偵測可能會誤判為 `Behavior:Win32/DefenseEvasion.A!ml`。`Add-MpPreference` 的 `-ExclusionPath` 與 `-ExclusionProcess` 皆原生支援 `*` 萬用字元，請以**系統管理員身分**開啟 PowerShell 執行以下指令一次，即可自動涵蓋所有 `MultiRoblox_v1.2.X.exe` 版本：
-
-```powershell
-Add-MpPreference -ExclusionPath "$env:USERPROFILE\Desktop\MultiRoblox-RAM", "$env:USERPROFILE\Desktop\MultiRoblox-RAM\MultiRoblox\dist\release_*\MultiRoblox_v*.exe", "$env:USERPROFILE\Desktop\MultiRoblox_v*.exe", "$env:APPDATA\multiroblox" -ExclusionProcess "MultiRoblox_v*.exe", "MultiRoblox.exe", "RobloxNative.exe"
-```
+> 若首次啟動遇到 Windows Defender 誤判，程式內已內建 UAC 一鍵加入排除清單引導，無需手動輸入 PowerShell 指令。
 
 ---
 
