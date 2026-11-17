@@ -795,11 +795,8 @@ internal static class AntiAfk
                     {
                         SetWindowPos(hWnd, IntPtr.Zero, r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOSENDCHANGING);
                     }
-                    if (targetPids.Count == 1)
-                    {
-                        BringWindowToTop(hWnd);
-                        ForceForeground(hWnd);
-                    }
+                    BringWindowToTop(hWnd);
+                    ForceForeground(hWnd);
                 }
                 count++;
             }
