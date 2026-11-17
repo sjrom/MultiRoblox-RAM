@@ -276,6 +276,7 @@ pub fn reset_state_for_wipe(state: &AppState) {
     *state.window_positions.lock().unwrap() = Default::default();
     state.manual_priority.lock().unwrap().clear();
     state.watched_accounts.lock().unwrap().clear();
+    state.hidden_accounts.lock().unwrap().clear();
     state.miss_counts.lock().unwrap().clear();
     state.auto_relaunch_history.lock().unwrap().clear();
     state.csrf_cache.lock().unwrap().clear();
@@ -518,6 +519,67 @@ pub fn process_memory_mb(_pid: u32) -> Option<u32> {
     None
 }
 
+#[cfg(windows)]
+pub fn hidden_window_pids(pids: &[u32]) -> std::collections::HashSet<u32> {
+    use std::collections::HashSet;
+    use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetClassNameW, GetWindowTextLengthW, GetWindowTextW,
+        GetWindowThreadProcessId, IsIconic, IsWindowVisible,
+    };
+    struct State {
+        targets: HashSet<u32>,
+        visible: HashSet<u32>,
+        hidden_main: HashSet<u32>,
+    }
+    unsafe extern "system" fn cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let st = &mut *(lparam.0 as *mut State);
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if !st.targets.contains(&pid) {
+            return BOOL(1);
+        }
+        let title_len = GetWindowTextLengthW(hwnd);
+        if title_len == 0 {
+            return BOOL(1);
+        }
+        let mut cls = [0u16; 64];
+        let clen = GetClassNameW(hwnd, &mut cls);
+        let is_client_cls = clen > 0 && String::from_utf16_lossy(&cls[..clen as usize]) == "WINDOWSCLIENT";
+        let mut title = [0u16; 64];
+        let tlen = GetWindowTextW(hwnd, &mut title);
+        let is_roblox_title = tlen > 0 && String::from_utf16_lossy(&title[..tlen as usize]) == "Roblox";
+        if IsWindowVisible(hwnd).as_bool() {
+            if is_client_cls || is_roblox_title {
+                st.visible.insert(pid);
+            }
+        } else if IsIconic(hwnd).as_bool() || is_client_cls || is_roblox_title {
+            st.hidden_main.insert(pid);
+        }
+        BOOL(1)
+    }
+    let targets: HashSet<u32> = pids.iter().copied().filter(|&p| p > 0).collect();
+    if targets.is_empty() {
+        return HashSet::new();
+    }
+    let mut st = State {
+        targets,
+        visible: HashSet::new(),
+        hidden_main: HashSet::new(),
+    };
+    unsafe {
+        let _ = EnumWindows(Some(cb), LPARAM(&mut st as *mut State as isize));
+    }
+    st.hidden_main
+        .into_iter()
+        .filter(|pid| !st.visible.contains(pid))
+        .collect()
+}
+#[cfg(not(windows))]
+pub fn hidden_window_pids(_pids: &[u32]) -> std::collections::HashSet<u32> {
+    std::collections::HashSet::new()
+}
+
 // Matches Task Manager's own priority names/mapping (its "Low" is
 // IDLE_PRIORITY_CLASS, not a literal low-priority constant).
 #[cfg(windows)]
@@ -718,6 +780,7 @@ pub async fn kill_all_roblox(app: &AppHandle, state: &AppState) -> Value {
     let untracked = watched_ids.len().saturating_sub(pids.len());
 
     state.watched_accounts.lock().unwrap().clear();
+    state.hidden_accounts.lock().unwrap().clear();
     state.miss_counts.lock().unwrap().clear();
     state.account_pids.lock().unwrap().clear();
     state.manual_priority.lock().unwrap().clear();
@@ -766,6 +829,7 @@ pub async fn kill_account_roblox(app: &AppHandle, state: &AppState, account_id: 
     cancel_launch(state, account_id);
     let pid = state.account_pids.lock().unwrap().remove(account_id);
     state.watched_accounts.lock().unwrap().remove(account_id);
+    state.hidden_accounts.lock().unwrap().remove(account_id);
     state.miss_counts.lock().unwrap().remove(account_id);
     clear_manual_priority(state, account_id);
     stop_watch_poll_if_idle(state);
@@ -1063,25 +1127,38 @@ pub async fn adopt_existing_instances(app: &AppHandle, state: &AppState) {
     if alive.is_empty() {
         return;
     }
+    let pid_vec: Vec<u32> = alive.iter().map(|(_, p, _)| *p).collect();
+    let win_hidden = hidden_window_pids(&pid_vec);
     let known_ids: std::collections::HashSet<String> = crate::storage::load_accounts_raw()
         .into_iter()
         .filter_map(|a| a.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()))
         .collect();
     let mut adopted_ids = Vec::new();
+    let mut sync_hidden_ids = Vec::new();
     {
         let mut pids = state.account_pids.lock().unwrap();
         let mut watched = state.watched_accounts.lock().unwrap();
+        let mut hidden_accts = state.hidden_accounts.lock().unwrap();
         let mut misses = state.miss_counts.lock().unwrap();
         let now = now_ms();
-        for (id, pid) in alive {
+        for (id, pid, persisted_hidden) in alive {
             if !known_ids.contains(&id) {
                 continue;
             }
             pids.insert(id.clone(), pid);
             watched.insert(id.clone(), now);
             misses.insert(id.clone(), 0);
+            if persisted_hidden || win_hidden.contains(&pid) {
+                hidden_accts.insert(id.clone());
+                if !persisted_hidden {
+                    sync_hidden_ids.push(id.clone());
+                }
+            }
             adopted_ids.push(id);
         }
+    }
+    if !sync_hidden_ids.is_empty() {
+        crate::instance_labels::set_hidden(&sync_hidden_ids, true);
     }
     if !adopted_ids.is_empty() {
         start_watch_poll(app, app.clone());
@@ -1225,6 +1302,7 @@ async fn watch_tick(app: &AppHandle) {
 
     for account_id in &closed {
         state.watched_accounts.lock().unwrap().remove(account_id);
+        state.hidden_accounts.lock().unwrap().remove(account_id);
         state.miss_counts.lock().unwrap().remove(account_id);
         let accounts = crate::storage::load_accounts(&state);
         let acct = accounts
@@ -1818,6 +1896,7 @@ pub async fn do_launch(
             {
                 let mut pids = state.account_pids.lock().unwrap();
                 pids.insert(account_id.to_string(), pid);
+                state.hidden_accounts.lock().unwrap().remove(account_id);
                 crate::window_positions::launched(state, pid);
             }
             crate::instance_labels::remember(account_id, pid);

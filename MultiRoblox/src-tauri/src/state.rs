@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use tauri::AppHandle;
@@ -30,6 +30,7 @@ pub struct AppState {
     pub window_positions: Mutex<crate::window_positions::WindowPositions>,
     pub manual_priority: Mutex<HashMap<String, String>>,
     pub watched_accounts: Mutex<HashMap<String, i64>>,
+    pub hidden_accounts: Mutex<HashSet<String>>,
     pub miss_counts: Mutex<HashMap<String, u32>>,
     pub watch_handle: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     pub auto_relaunch_history: Mutex<HashMap<String, Vec<i64>>>,
@@ -90,6 +91,7 @@ impl AppState {
             window_positions: Mutex::new(crate::window_positions::WindowPositions::default()),
             manual_priority: Mutex::new(HashMap::new()),
             watched_accounts: Mutex::new(HashMap::new()),
+            hidden_accounts: Mutex::new(HashSet::new()),
             miss_counts: Mutex::new(HashMap::new()),
             watch_handle: Mutex::new(None),
             auto_relaunch_history: Mutex::new(HashMap::new()),

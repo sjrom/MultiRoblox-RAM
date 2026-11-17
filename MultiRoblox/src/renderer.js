@@ -250,7 +250,10 @@ async function continueInit() {
   // inter-launch stagger, trailing bookkeeping; to resolve back to the
   // caller. markLaunched() is idempotent, so the doLaunch() success path
   // below calling it again once its own await resolves is harmless.
-  api.onRobloxStarted(id => markLaunched(id));
+  api.onRobloxStarted(id => {
+    markLaunched(id);
+    setTimeout(pollWatchedIds, 60);
+  });
 
   api.onRobloxClosed(id => {
     _launchedIds.delete(id);
@@ -2783,12 +2786,36 @@ async function pollWatchedIds() {
       delete _accountRamStats[k];
     }
   }
+  let visChanged = false;
   if (isMap) {
     for (const id of ids) {
-      const mb = data[id] || 0;
+      const val = data[id];
+      const mb = (val && typeof val === 'object') ? (val.mb || 0) : (val || 0);
       _accountRamMb[id] = mb;
       if (mb > 0) _recordRamSample(id, mb);
+      if (val && typeof val === 'object' && typeof val.hidden === 'boolean') {
+        const wasHidden = _hiddenIds.has(id);
+        if (val.hidden !== wasHidden) {
+          if (val.hidden) _hiddenIds.add(id); else _hiddenIds.delete(id);
+          visChanged = true;
+        }
+      }
     }
+  }
+  for (const id of Array.from(_hiddenIds)) {
+    if (!watched.has(id)) {
+      _hiddenIds.delete(id);
+      visChanged = true;
+    }
+  }
+  if (visChanged) {
+    _windowsHidden = ids.length > 0 && _hiddenIds.size >= ids.length;
+    updateHideButtonUI();
+  }
+  if (ids.length > 0 && (_mixRunning || 0) < ids.length) {
+    setRunningBadges(ids.length);
+  } else if (visChanged) {
+    updateTaskbarStatus();
   }
   // Cards that drop out of the active filter get pulled from the DOM
   // directly instead of a full render(), which would replay entrance
@@ -2801,9 +2828,11 @@ async function pollWatchedIds() {
     const shouldBeLive = watched.has(id);
     const isLive = card.classList.contains('is-live');
     if (shouldBeLive !== isLive) {
-      setCardLiveState(card, shouldBeLive);
       if (shouldBeLive) _launchedIds.add(id); else _launchedIds.delete(id);
+      setCardLiveState(card, shouldBeLive);
       if (dropFromFilter && dropFromFilter(id)) card.remove();
+    } else if (shouldBeLive) {
+      updateCardVisButton(id);
     }
     updateCardRamUI(id);
   });

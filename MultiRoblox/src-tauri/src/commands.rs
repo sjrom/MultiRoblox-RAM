@@ -623,6 +623,8 @@ pub async fn roblox_align_windows(
     match crate::helper::call(&app, &state, "align", crate::helper::DEFAULT_TIMEOUT).await {
         Ok(out) => {
             let count = out.trim().parse::<usize>().unwrap_or(0);
+            state.hidden_accounts.lock().unwrap().clear();
+            crate::instance_labels::set_all_hidden(false);
             Ok(serde_json::json!({ "ok": true, "aligned": count }))
         }
         Err(e) => Ok(serde_json::json!({ "ok": false, "error": e })),
@@ -635,15 +637,15 @@ pub async fn roblox_set_windows_hidden(
     state: State<'_, AppState>,
     hide: bool,
 ) -> Result<Value, ()> {
-    let pids: Vec<String> = state
+    let entries: Vec<(String, u32)> = state
         .account_pids
         .lock()
         .unwrap()
-        .values()
-        .copied()
-        .filter(|&pid| pid > 0)
-        .map(|pid| pid.to_string())
+        .iter()
+        .filter(|(_, &pid)| pid > 0)
+        .map(|(id, &pid)| (id.clone(), pid))
         .collect();
+    let pids: Vec<String> = entries.iter().map(|(_, pid)| pid.to_string()).collect();
     if hide && pids.is_empty() {
         return Ok(serde_json::json!({ "ok": true, "hidden": false, "count": 0 }));
     }
@@ -656,8 +658,19 @@ pub async fn roblox_set_windows_hidden(
         Ok(out) => {
             let count = out.trim().parse::<usize>().unwrap_or(0);
             if hide && count > 0 {
+                let target_ids: Vec<String> = entries.iter().map(|(id, _)| id.clone()).collect();
+                {
+                    let mut h = state.hidden_accounts.lock().unwrap();
+                    for id in &target_ids {
+                        h.insert(id.clone());
+                    }
+                }
+                crate::instance_labels::set_hidden(&target_ids, true);
                 tokio::time::sleep(std::time::Duration::from_millis(150)).await;
                 let _ = crate::native::trim_roblox_memory(&app, &state).await;
+            } else if !hide {
+                state.hidden_accounts.lock().unwrap().clear();
+                crate::instance_labels::set_all_hidden(false);
             }
             Ok(serde_json::json!({ "ok": true, "hidden": hide && count > 0, "count": count }))
         }
@@ -687,8 +700,13 @@ pub async fn roblox_set_account_window_hidden(
         Ok(out) => {
             let count = out.trim().parse::<usize>().unwrap_or(0);
             if hide && count > 0 {
+                state.hidden_accounts.lock().unwrap().insert(id.clone());
+                crate::instance_labels::set_hidden(std::slice::from_ref(&id), true);
                 tokio::time::sleep(std::time::Duration::from_millis(150)).await;
                 let _ = crate::native::trim_account_memory(&app, &state, &id).await;
+            } else if !hide {
+                state.hidden_accounts.lock().unwrap().remove(&id);
+                crate::instance_labels::set_hidden(std::slice::from_ref(&id), false);
             }
             Ok(serde_json::json!({ "ok": true, "hidden": hide && count > 0, "count": count }))
         }
@@ -770,11 +788,11 @@ pub async fn roblox_running_count(app: AppHandle, state: State<'_, AppState>) ->
 }
 
 // Polled by the frontend to self-heal card state if a push event is missed,
-// and to report live Working Set RAM (MB) for each running account.
+// and to report live Working Set RAM (MB) + hidden state for each running account.
 #[tauri::command]
 pub async fn roblox_watched_ids(
     state: State<'_, AppState>,
-) -> Result<std::collections::HashMap<String, u32>, ()> {
+) -> Result<std::collections::HashMap<String, Value>, ()> {
     let ids: Vec<String> = state
         .watched_accounts
         .lock()
@@ -783,13 +801,19 @@ pub async fn roblox_watched_ids(
         .cloned()
         .collect();
     let pids = state.account_pids.lock().unwrap().clone();
+    let hidden_accts = state.hidden_accounts.lock().unwrap().clone();
+    let pid_list: Vec<u32> = pids.values().copied().filter(|&p| p > 0).collect();
+    let hidden_pids = crate::native::hidden_window_pids(&pid_list);
     let mut out = std::collections::HashMap::with_capacity(ids.len());
     for id in ids {
-        let mb = pids
-            .get(&id)
-            .and_then(|&pid| crate::native::process_memory_mb(pid))
-            .unwrap_or(0);
-        out.insert(id, mb);
+        let pid = pids.get(&id).copied().unwrap_or(0);
+        let mb = if pid > 0 {
+            crate::native::process_memory_mb(pid).unwrap_or(0)
+        } else {
+            0
+        };
+        let hidden = hidden_accts.contains(&id) || (pid > 0 && hidden_pids.contains(&pid));
+        out.insert(id, serde_json::json!({ "mb": mb, "hidden": hidden }));
     }
     Ok(out)
 }

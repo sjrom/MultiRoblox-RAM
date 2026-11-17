@@ -613,6 +613,8 @@ internal static class AntiAfk
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hWnd);
     [DllImport("user32.dll")] static extern int GetWindowTextLength(IntPtr hWnd);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
     [DllImport("user32.dll")] static extern uint MapVirtualKey(uint uCode, uint uMapType);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -674,6 +676,16 @@ internal static class AntiAfk
                 if (w == hWnd) return true;
             }
         }
+        return false;
+    }
+
+    static bool IsHiddenRobloxMain(IntPtr hWnd)
+    {
+        if (IsIconic(hWnd)) return true;
+        var cls = new System.Text.StringBuilder(64);
+        if (GetClassName(hWnd, cls, cls.Capacity) > 0 && cls.ToString() == "WINDOWSCLIENT") return true;
+        var title = new System.Text.StringBuilder(64);
+        if (GetWindowText(hWnd, title, title.Capacity) > 0 && title.ToString() == "Roblox") return true;
         return false;
     }
 
@@ -742,8 +754,8 @@ internal static class AntiAfk
             EnumWindows((hWnd, lp) =>
             {
                 if (IsWindowVisible(hWnd)) return true;
-                if (!IsIconic(hWnd)) return true;
                 if (GetWindowTextLength(hWnd) == 0) return true;
+                if (!IsHiddenRobloxMain(hWnd)) return true;
                 uint pid; GetWindowThreadProcessId(hWnd, out pid);
                 if (!robloxPids.Contains(pid)) return true;
                 if (targetPids.Count > 0 && !targetPids.Contains(pid)) return true;
@@ -833,14 +845,26 @@ internal static class AntiAfk
             lock (_hiddenLock) { _hiddenWindows.Clear(); _savedRects.Clear(); }
             return map;
         }
+        var hiddenFallback = new System.Collections.Generic.Dictionary<uint, IntPtr>();
         EnumWindows((hWnd, lp) =>
         {
-            if (!IsWindowVisible(hWnd)) return true;
             if (GetWindowTextLength(hWnd) == 0) return true; // main game window has a title
             uint pid; GetWindowThreadProcessId(hWnd, out pid);
-            if (robloxPids.Contains(pid) && !map.ContainsKey(pid)) map[pid] = hWnd;
+            if (!robloxPids.Contains(pid)) return true;
+            if (IsWindowVisible(hWnd))
+            {
+                if (!map.ContainsKey(pid)) map[pid] = hWnd;
+            }
+            else if (IsHiddenRobloxMain(hWnd) && !hiddenFallback.ContainsKey(pid))
+            {
+                hiddenFallback[pid] = hWnd;
+            }
             return true;
         }, IntPtr.Zero);
+        foreach (var kv in hiddenFallback)
+        {
+            if (!map.ContainsKey(kv.Key)) map[kv.Key] = kv.Value;
+        }
         lock (_hiddenLock)
         {
             var dead = new System.Collections.Generic.List<uint>();
@@ -1350,7 +1374,6 @@ internal static class Daemon
         // there is never an orphaned helper holding Roblox's mutex.
         StopWatch();
         StopAfk();
-        AntiAfk.ShowWindows("", false);
         return 0;
     }
 
@@ -1476,7 +1499,6 @@ internal static class Daemon
                     // the system foreground-lock timeout -- would never run.
                     StopWatch();
                     StopAfk();
-                    AntiAfk.ShowWindows("", false);
                     Environment.Exit(0);
                     break;
 
