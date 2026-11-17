@@ -79,11 +79,8 @@ Because MultiRoblox extracts an unsigned helper (`RobloxNative.exe`) to manage R
 
 ## How it works
 
-Roblox prevents multiple instances by holding a Windows mutex. MultiRoblox grabs that mutex first through a lightweight native helper (`RobloxNative.exe`, written in C#), so Roblox opens a fresh instance every time. Each account gets its own auth ticket before launch, so they all sign in as different accounts.
-
-Login opens a native, chromeless window (no external browser involved) that reads the session cookie directly once you sign in.
-
-If the native helper isn't shipped with a build, it compiles from the bundled source using the .NET Framework `csc.exe` already on every Windows machine.
+MultiRoblox lifts Roblox's single-client limit so each account launches cleanly in its own session.
+Accounts sign in through an integrated login window and are stored locally with encryption on your PC.
 
 ---
 
